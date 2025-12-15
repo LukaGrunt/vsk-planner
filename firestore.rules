@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Members collection
+    match /members/{memberId} {
+      // Anyone authenticated can read all members
+      allow read: if request.auth != null;
+      
+      // Anyone authenticated can create/update/delete
+      // Frontend enforces role-based restrictions (superadmin for role changes, etc.)
+      allow create, update, delete: if request.auth != null;
+    }
+    
+    // Posts collection (events, announcements)
+    match /posts/{postId} {
+      // Anyone authenticated can read posts
+      allow read: if request.auth != null;
+      
+      // Anyone authenticated can create/update/delete
+      // Frontend restricts create/delete to admin/superadmin
+      // Update allowed for all (RSVPs)
+      allow create, update, delete: if request.auth != null;
+    }
+    
+    // Messages collection (chat)
+    match /messages/{messageId} {
+      // Anyone authenticated can read/create messages
+      allow read, create: if request.auth != null;
+      
+      // Anyone authenticated can update/delete (frontend enforces ownership)
+      allow update, delete: if request.auth != null;
+    }
+  }
+}
