@@ -6,6 +6,125 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Calendar, Target, User, Users, FileText, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Edit2, Trash2, X, BarChart3, Trophy, Volume2, Send, Upload, Check, AlertCircle, Link, Image, ExternalLink, Timer, UserPlus, RotateCcw } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
+// Error Boundary Component
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    // Error caught - could send to logging service here
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: '#0a0b0c',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif'
+        }}>
+          <div style={{
+            background: 'rgba(28, 31, 34, 0.8)',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '20px',
+            padding: '40px',
+            maxWidth: '500px',
+            width: '100%',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              background: 'rgba(239, 68, 68, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 24px',
+              fontSize: '32px'
+            }}>
+              ⚠️
+            </div>
+            <h1 style={{
+              fontSize: '24px',
+              fontWeight: '700',
+              color: '#fff',
+              marginBottom: '12px'
+            }}>
+              Ups! Nekaj je šlo narobe
+            </h1>
+            <p style={{
+              fontSize: '14px',
+              color: 'rgba(255,255,255,0.6)',
+              marginBottom: '24px',
+              lineHeight: '1.6'
+            }}>
+              Aplikacija je naletela na napako. Ne skrbite, vaši podatki so varni. Poskusite ponovno naložiti stran.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: 'linear-gradient(135deg, #c1372a 0%, #a12e23 100%)',
+                border: 'none',
+                borderRadius: '12px',
+                color: '#fff',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'transform 0.2s'
+              }}
+              onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
+              onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              Ponovno naloži
+            </button>
+            {this.state.error && (
+              <details style={{
+                marginTop: '24px',
+                textAlign: 'left',
+                fontSize: '12px',
+                color: 'rgba(255,255,255,0.4)'
+              }}>
+                <summary style={{ cursor: 'pointer', marginBottom: '8px' }}>
+                  Tehnične podrobnosti
+                </summary>
+                <pre style={{
+                  background: 'rgba(0,0,0,0.3)',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  overflow: 'auto',
+                  maxHeight: '200px'
+                }}>
+                  {this.state.error.toString()}
+                </pre>
+              </details>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 const firebaseConfig = {
   apiKey: "AIzaSyC0oWYMXzK4Jx4xudkcrSo2p-s7Ijsohxo",
   authDomain: "vsk-planner.firebaseapp.com",
@@ -1470,7 +1589,7 @@ const sendNotification = async (title, body) => {
   }
 };
 
-export default function App() {
+function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -5100,5 +5219,14 @@ export default function App() {
         ))}
       </div>
     </div>
+  );
+}
+
+// Export App wrapped with ErrorBoundary
+export default function AppWithErrorBoundary() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   );
 }
