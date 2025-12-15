@@ -1465,7 +1465,7 @@ const sendNotification = async (title, body) => {
         new Notification(title, { body });
       }
     } catch (e) {
-      console.log('Notification error:', e);
+      // Notification error silently ignored
     }
   }
 };
@@ -1537,7 +1537,6 @@ export default function App() {
     try {
       await fn();
     } catch (e) {
-      console.error(`Operation ${operationId} failed:`, e);
       showToast((t.error || 'Napaka') + ': ' + e.message, 'error');
     } finally {
       setOperationInProgress(prev => ({ ...prev, [operationId]: false }));
@@ -2296,8 +2295,8 @@ export default function App() {
           });
         }
       });
-    } catch (e) { 
-      console.error('Failed to load profile after retries:', e);
+    } catch (e) {
+      // Failed to load profile - error silently ignored
     }
   };
 
@@ -2312,9 +2311,9 @@ export default function App() {
           return dateB - dateA;
         }));
       });
-    } catch (e) { 
-      console.error('Failed to load posts after retries:', e);
-      setPosts([]); 
+    } catch (e) {
+      // Failed to load posts - setting empty array
+      setPosts([]);
     }
   };
 
@@ -2324,9 +2323,9 @@ export default function App() {
         const snap = await getDocs(collection(db, 'members'));
         setMembers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       });
-    } catch (e) { 
-      console.error('Failed to load members after retries:', e);
-      setMembers([]); 
+    } catch (e) {
+      // Failed to load members - setting empty array
+      setMembers([]);
     }
   };
 
@@ -2344,9 +2343,9 @@ export default function App() {
         const active = data.find(p => p.active && !dismissedPopups.includes(p.id));
         if (active) setActivePopup(active);
       });
-    } catch (e) { 
-      console.error('Failed to load popups after retries:', e);
-      setPopups([]); 
+    } catch (e) {
+      // Failed to load popups - setting empty array
+      setPopups([]);
     }
   };
 
@@ -2361,9 +2360,9 @@ export default function App() {
           setFeaturedArticle(null);
         }
       });
-    } catch (e) { 
-      console.error('Failed to load featured article after retries:', e);
-      setFeaturedArticle(null); 
+    } catch (e) {
+      // Failed to load featured article - setting null
+      setFeaturedArticle(null);
     }
   };
 
@@ -2533,7 +2532,6 @@ export default function App() {
       // Will redirect to login since we're logged out
       window.location.reload();
     } catch (error) {
-      console.error('Error creating member:', error);
       showToast('Napaka: ' + error.message, 'error');
     }
   };
