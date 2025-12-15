@@ -77,6 +77,14 @@ const formatDateSafe = (dateStr) => {
   return parts.length === 3 ? `${parts[2]}.${parts[1]}.${parts[0]}` : dateStr;
 };
 
+// Create local datetime from date + time strings (fixes timezone issues)
+const createEventDateTime = (dateStr, timeStr = "23:59") => {
+  if (!dateStr) return null;
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const [hours, minutes] = (timeStr || "23:59").split(':').map(Number);
+  return new Date(year, month - 1, day, hours, minutes);
+};
+
 // Glassmorphism styles
 const glassStyle = {
   background: 'rgba(28, 31, 34, 0.75)',
@@ -147,15 +155,16 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
   const canRSVP = (post.type === 'training' || post.type === 'competition') && currentUser;
   const isCoach = userRole === 'admin' || userRole === 'superadmin';
   
-  // Check if training is in the past
-  const eventDate = post.date ? new Date(post.date) : null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const isPast = eventDate && eventDate < today;
-  
-  // Check 24h lockout
-  const lockoutTime = eventDate ? new Date(eventDate.getTime() - 24 * 60 * 60 * 1000) : null;
-  const isLockedOut = lockoutTime && new Date() > lockoutTime && !isPast;
+  // Check if training is in the past (using local timezone)
+  const eventDateTime = createEventDateTime(post.date, post.time);
+  const now = new Date();
+  const isPast = eventDateTime && eventDateTime < now;
+
+  // Check 24h lockout (calculated from event datetime, not just date)
+  const lockoutDateTime = eventDateTime
+    ? new Date(eventDateTime.getTime() - 24 * 60 * 60 * 1000)
+    : null;
+  const isLockedOut = lockoutDateTime && now > lockoutDateTime && !isPast;
   
   // AAR state
   const [showAAR, setShowAAR] = useState(false);
@@ -1504,7 +1513,13 @@ export default function App() {
   
   // Operation tracking to prevent double-clicks
   const [operationInProgress, setOperationInProgress] = useState({});
-  
+
+  // User registration form state
+  const [showNewMemberForm, setShowNewMemberForm] = useState(false);
+  const [newMemberData, setNewMemberData] = useState({
+    email: '', ime: '', priimek: '', telefon: '', morsStevilo: '', role: 'user'
+  });
+
   // Toast helper function
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
@@ -2479,6 +2494,50 @@ export default function App() {
     try { await updateDoc(doc(db, 'members', id), { membershipPaid: !m.membershipPaid }); loadMembers(); } catch (e) {}
   };
 
+  const handleCreateMember = async (memberData) => {
+    if (!memberData.email || !memberData.ime || !memberData.priimek) {
+      showToast('Email, ime in priimek so obvezni', 'error');
+      return;
+    }
+
+    try {
+      const tempPassword = Math.random().toString(36).slice(-8) + 'Aa1!';
+
+      // This will log you out!
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        memberData.email,
+        tempPassword
+      );
+
+      await setDoc(doc(db, 'members', userCredential.user.uid), {
+        email: memberData.email,
+        ime: memberData.ime,
+        priimek: memberData.priimek,
+        telefon: memberData.telefon || '',
+        morsStevilo: memberData.morsStevilo || '',
+        role: memberData.role || 'user',
+        membershipPaid: false,
+        orozneListine: [],
+        createdAt: new Date(),
+        createdBy: currentUser?.email || 'admin'
+      });
+
+      await sendPasswordResetEmail(auth, memberData.email);
+
+      // Copy temp password to clipboard
+      navigator.clipboard.writeText(tempPassword);
+
+      alert(`Član ustvarjen!\n\nEmail: ${memberData.email}\nZačasno geslo: ${tempPassword}\n\n(Geslo kopirano v clipboard)\n\nReset email poslan. Prijavite se ponovno.`);
+
+      // Will redirect to login since we're logged out
+      window.location.reload();
+    } catch (error) {
+      console.error('Error creating member:', error);
+      showToast('Napaka: ' + error.message, 'error');
+    }
+  };
+
   const saveProfileData = async () => {
     try {
       const q = query(collection(db, 'members'), where('email', '==', currentUser.email));
@@ -2849,7 +2908,10 @@ export default function App() {
     ? [{ key: 'admin-dashboard', label: t.admin, icon: BarChart3 }, { key: 'news', label: t.news, icon: FileText }, { key: 'calendar', label: t.calendar, icon: Calendar }, { key: 'chat', label: t.chat, icon: Users }, { key: 'profile', label: t.profile, icon: User }]
     : [{ key: 'news', label: t.news, icon: FileText }, { key: 'calendar', label: t.calendar, icon: Calendar }, { key: 'chat', label: t.chat, icon: Users }, { key: 'profile', label: t.profile, icon: User }];
 
-  const newsPosts = posts.filter(p => p.showInNews === true);
+  const newsPosts = posts.filter(p =>
+    p.showInNews === true &&
+    (p.type === 'announcement' || p.type === 'payment')
+  );
 
   return (
     <div 
@@ -3038,6 +3100,13 @@ export default function App() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                     <div style={{ width: '46px', height: '46px', borderRadius: '12px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px rgba(16, 185, 129, 0.3)' }}><Upload size={22} color="#fff" /></div>
                     <div><h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '2px' }}>{t.importCSV}</h3><p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>{t.bulkImport}</p></div>
+                  </div>
+                  <ChevronRight size={22} color="rgba(255,255,255,0.3)" />
+                </div>
+                <div onClick={() => setShowNewMemberForm(true)} style={{ ...glassCardStyle, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{ width: '46px', height: '46px', borderRadius: '12px', background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px rgba(6, 182, 212, 0.3)' }}><UserPlus size={22} color="#fff" /></div>
+                    <div><h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '2px' }}>Dodaj člana</h3><p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>Ustvari nov uporabniški račun</p></div>
                   </div>
                   <ChevronRight size={22} color="rgba(255,255,255,0.3)" />
                 </div>
@@ -4915,6 +4984,85 @@ export default function App() {
               </div>
             );
           })()}
+          </div>
+        </div>
+      )}
+
+      {/* New Member Modal */}
+      {showNewMemberForm && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: '20px' }}>
+          <div style={{ ...glassStyle, borderRadius: '20px', padding: '24px', maxWidth: '450px', width: '100%' }}>
+            <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#fff', marginBottom: '16px' }}>Dodaj novega člana</h2>
+            <form onSubmit={(e) => { e.preventDefault(); handleCreateMember(newMemberData); }} style={{ display: 'grid', gap: '12px' }}>
+              <input
+                type="email"
+                placeholder="Email *"
+                required
+                value={newMemberData.email}
+                onChange={(e) => setNewMemberData({ ...newMemberData, email: e.target.value })}
+                style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }}
+              />
+              <input
+                type="text"
+                placeholder="Ime *"
+                required
+                value={newMemberData.ime}
+                onChange={(e) => setNewMemberData({ ...newMemberData, ime: e.target.value })}
+                style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }}
+              />
+              <input
+                type="text"
+                placeholder="Priimek *"
+                required
+                value={newMemberData.priimek}
+                onChange={(e) => setNewMemberData({ ...newMemberData, priimek: e.target.value })}
+                style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }}
+              />
+              <input
+                type="tel"
+                placeholder="Telefon"
+                value={newMemberData.telefon}
+                onChange={(e) => setNewMemberData({ ...newMemberData, telefon: e.target.value })}
+                style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }}
+              />
+              <input
+                type="text"
+                placeholder="MORS številka"
+                value={newMemberData.morsStevilo}
+                onChange={(e) => setNewMemberData({ ...newMemberData, morsStevilo: e.target.value })}
+                style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }}
+              />
+              <select
+                value={newMemberData.role}
+                onChange={(e) => setNewMemberData({ ...newMemberData, role: e.target.value })}
+                style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px' }}
+              >
+                <option value="user">Član</option>
+                <option value="admin">Admin</option>
+                <option value="superadmin">Superadmin</option>
+              </select>
+              <div style={{ background: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '10px', padding: '12px', marginTop: '8px' }}>
+                <p style={{ fontSize: '12px', color: '#fbbf24', lineHeight: '1.5' }}>⚠️ Opozorilo: Po ustvarjanju člana boste odjavljeni! Začasno geslo bo kopirano in prikazano - pošljite ga novemu članu.</p>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNewMemberForm(false);
+                    setNewMemberData({ email: '', ime: '', priimek: '', telefon: '', morsStevilo: '', role: 'user' });
+                  }}
+                  style={{ padding: '12px', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '10px', color: '#fff', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+                >
+                  Prekliči
+                </button>
+                <button
+                  type="submit"
+                  style={{ padding: '12px', background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)', border: 'none', borderRadius: '10px', color: '#fff', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+                >
+                  Ustvari
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
