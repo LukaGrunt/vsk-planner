@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider, sendPasswordResetEmail } from 'firebase/auth';
-import { getFirestore, collection, getDocs, getDoc, addDoc, updateDoc, deleteDoc, doc, query, where, onSnapshot, orderBy, setDoc } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, getDoc, addDoc, updateDoc, deleteDoc, doc, query, where, onSnapshot, orderBy, setDoc, limit, startAfter } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Calendar, Target, User, Users, FileText, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Edit2, Trash2, X, BarChart3, Trophy, Volume2, Send, Upload, Check, AlertCircle, Link, Image, ExternalLink, Timer, UserPlus, RotateCcw } from 'lucide-react';
 import html2canvas from 'html2canvas';
@@ -146,6 +146,10 @@ const EVENT_COLORS = {
   announcement: { bg: '#3b82f6', text: '#fff', label: 'Obvestilo', icon: Volume2, calendarColor: '#3b82f6' },
   payment: { bg: '#10b981', text: '#fff', label: 'Plačilo', icon: FileText, calendarColor: '#10b981' }
 };
+
+// Pagination constants
+const POSTS_PER_PAGE = 50;
+const MEMBERS_PER_PAGE = 100;
 
 // ============================================
 // UTILITY FUNCTIONS FOR CODE STRENGTHENING
@@ -1596,6 +1600,10 @@ function App() {
   const [view, setView] = useState('home');
   const [posts, setPosts] = useState([]);
   const [members, setMembers] = useState([]);
+  const [hasMorePosts, setHasMorePosts] = useState(false);
+  const [lastPostDoc, setLastPostDoc] = useState(null);
+  const [hasMoreMembers, setHasMoreMembers] = useState(false);
+  const [lastMemberDoc, setLastMemberDoc] = useState(null);
   const [editingPost, setEditingPost] = useState(null);
   const [showCSVImport, setShowCSVImport] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
@@ -2422,29 +2430,124 @@ function App() {
   const loadPosts = async () => {
     try {
       await withRetry(async () => {
-        const snap = await getDocs(collection(db, 'posts'));
+        const q = query(
+          collection(db, 'posts'),
+          orderBy('date', 'desc'),
+          limit(POSTS_PER_PAGE + 1) // Fetch one extra to check if there are more
+        );
+        const snap = await getDocs(q);
         const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setPosts(data.sort((a, b) => {
-          const dateA = safeParseDate(a.date) || new Date(0);
-          const dateB = safeParseDate(b.date) || new Date(0);
-          return dateB - dateA;
-        }));
+
+        // Check if there are more posts
+        const hasMore = data.length > POSTS_PER_PAGE;
+        setHasMorePosts(hasMore);
+
+        // Remove the extra document if it exists
+        const posts = hasMore ? data.slice(0, POSTS_PER_PAGE) : data;
+        setPosts(posts);
+
+        // Store last document for pagination
+        if (posts.length > 0) {
+          setLastPostDoc(snap.docs[posts.length - 1]);
+        }
       });
     } catch (e) {
       // Failed to load posts - setting empty array
       setPosts([]);
+      setHasMorePosts(false);
+    }
+  };
+
+  const loadMorePosts = async () => {
+    if (!lastPostDoc) return;
+    try {
+      await withRetry(async () => {
+        const q = query(
+          collection(db, 'posts'),
+          orderBy('date', 'desc'),
+          startAfter(lastPostDoc),
+          limit(POSTS_PER_PAGE + 1)
+        );
+        const snap = await getDocs(q);
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // Check if there are more posts
+        const hasMore = data.length > POSTS_PER_PAGE;
+        setHasMorePosts(hasMore);
+
+        // Remove the extra document if it exists
+        const newPosts = hasMore ? data.slice(0, POSTS_PER_PAGE) : data;
+        setPosts(prev => [...prev, ...newPosts]);
+
+        // Store last document for next pagination
+        if (newPosts.length > 0) {
+          setLastPostDoc(snap.docs[newPosts.length - 1]);
+        }
+      });
+    } catch (e) {
+      // Failed to load more posts
+      setHasMorePosts(false);
     }
   };
 
   const loadMembers = async () => {
     try {
       await withRetry(async () => {
-        const snap = await getDocs(collection(db, 'members'));
-        setMembers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const q = query(
+          collection(db, 'members'),
+          limit(MEMBERS_PER_PAGE + 1) // Fetch one extra to check if there are more
+        );
+        const snap = await getDocs(q);
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // Check if there are more members
+        const hasMore = data.length > MEMBERS_PER_PAGE;
+        setHasMoreMembers(hasMore);
+
+        // Remove the extra document if it exists
+        const members = hasMore ? data.slice(0, MEMBERS_PER_PAGE) : data;
+        setMembers(members);
+
+        // Store last document for pagination
+        if (members.length > 0) {
+          setLastMemberDoc(snap.docs[members.length - 1]);
+        }
       });
     } catch (e) {
       // Failed to load members - setting empty array
       setMembers([]);
+      setHasMoreMembers(false);
+    }
+  };
+
+  const loadMoreMembers = async () => {
+    if (!lastMemberDoc) return;
+    try {
+      await withRetry(async () => {
+        const q = query(
+          collection(db, 'members'),
+          startAfter(lastMemberDoc),
+          limit(MEMBERS_PER_PAGE + 1)
+        );
+        const snap = await getDocs(q);
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // Check if there are more members
+        const hasMore = data.length > MEMBERS_PER_PAGE;
+        setHasMoreMembers(hasMore);
+
+        // Remove the extra document if it exists
+        const newMembers = hasMore ? data.slice(0, MEMBERS_PER_PAGE) : data;
+        setMembers(prev => [...prev, ...newMembers]);
+
+        // Store last document for next pagination
+        if (newMembers.length > 0) {
+          setLastMemberDoc(snap.docs[newMembers.length - 1]);
+        }
+      });
+    } catch (e) {
+      // Failed to load more members
+      setHasMoreMembers(false);
     }
   };
 
@@ -3297,6 +3400,30 @@ function App() {
               </div>
             );
           })}
+
+          {/* Load More Posts Button */}
+          {hasMorePosts && (
+            <div style={{ textAlign: 'center', marginTop: '20px' }}>
+              <button
+                onClick={loadMorePosts}
+                style={{
+                  background: 'rgba(255,255,255,0.1)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '10px',
+                  padding: '12px 24px',
+                  color: '#fff',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+              >
+                Naloži več ({POSTS_PER_PAGE} objav)
+              </button>
+            </div>
+          )}
           </div>
         </div>
       )}
@@ -3511,6 +3638,30 @@ function App() {
               </div>
             </div>
           ))}
+
+          {/* Load More Members Button */}
+          {hasMoreMembers && (
+            <div style={{ textAlign: 'center', marginTop: '20px' }}>
+              <button
+                onClick={loadMoreMembers}
+                style={{
+                  background: 'rgba(255,255,255,0.1)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '10px',
+                  padding: '12px 24px',
+                  color: '#fff',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+              >
+                Naloži več ({MEMBERS_PER_PAGE} članov)
+              </button>
+            </div>
+          )}
           </div>
         </div>
       )}
