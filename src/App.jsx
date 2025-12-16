@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Sentry from '@sentry/react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider, sendPasswordResetEmail } from 'firebase/auth';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider, sendPasswordResetEmail, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getFirestore, collection, getDocs, getDoc, addDoc, updateDoc, deleteDoc, doc, query, where, onSnapshot, orderBy, setDoc, limit, startAfter } from 'firebase/firestore';
 import { Calendar, Target, User, Users, FileText, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Edit2, Trash2, X, BarChart3, Trophy, Volume2, Send, Upload, Check, AlertCircle, Link, ExternalLink, Timer, UserPlus, RotateCcw, Download } from 'lucide-react';
 import html2canvas from 'html2canvas';
@@ -1629,7 +1629,7 @@ function App() {
   // User registration form state
   const [showNewMemberForm, setShowNewMemberForm] = useState(false);
   const [newMemberData, setNewMemberData] = useState({
-    email: '', ime: '', priimek: '', telefon: '', morsStevilo: '', role: 'user'
+    email: '', ime: '', priimek: '', telefon: '', morsStevilo: '', role: 'user', password: ''
   });
 
   // Toast helper function
@@ -2716,14 +2716,17 @@ function App() {
       return;
     }
 
-    try {
-      const tempPassword = Math.random().toString(36).slice(-8) + 'Aa1!';
+    if (!memberData.password || memberData.password.length < 6) {
+      showToast('Geslo mora biti dolgo vsaj 6 znakov', 'error');
+      return;
+    }
 
+    try {
       // This will log you out!
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         memberData.email,
-        tempPassword
+        memberData.password
       );
 
       await setDoc(doc(db, 'members', userCredential.user.uid), {
@@ -2739,15 +2742,14 @@ function App() {
         createdBy: currentUser?.email || 'admin'
       });
 
-      await sendPasswordResetEmail(auth, memberData.email);
+      showToast(`Član ustvarjen! Pošljite mu prijavne podatke.`, 'success');
 
-      // Copy temp password to clipboard
-      navigator.clipboard.writeText(tempPassword);
-
-      alert(`Član ustvarjen!\n\nEmail: ${memberData.email}\nZačasno geslo: ${tempPassword}\n\n(Geslo kopirano v clipboard)\n\nReset email poslan. Prijavite se ponovno.`);
+      // Reset form
+      setNewMemberData({ email: '', ime: '', priimek: '', telefon: '', morsStevilo: '', role: 'user', password: '' });
+      setShowNewMemberForm(false);
 
       // Will redirect to login since we're logged out
-      window.location.reload();
+      setTimeout(() => window.location.reload(), 1500);
     } catch (error) {
       showToast('Napaka: ' + error.message, 'error');
     }
@@ -5349,6 +5351,15 @@ function App() {
                 onChange={(e) => setNewMemberData({ ...newMemberData, morsStevilo: e.target.value })}
                 style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }}
               />
+              <input
+                type="password"
+                placeholder="Geslo * (vsaj 6 znakov)"
+                required
+                minLength={6}
+                value={newMemberData.password}
+                onChange={(e) => setNewMemberData({ ...newMemberData, password: e.target.value })}
+                style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }}
+              />
               <select
                 value={newMemberData.role}
                 onChange={(e) => setNewMemberData({ ...newMemberData, role: e.target.value })}
@@ -5359,14 +5370,14 @@ function App() {
                 <option value="superadmin">Superadmin</option>
               </select>
               <div style={{ background: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '10px', padding: '12px', marginTop: '8px' }}>
-                <p style={{ fontSize: '12px', color: '#fbbf24', lineHeight: '1.5' }}>⚠️ Opozorilo: Po ustvarjanju člana boste odjavljeni! Začasno geslo bo kopirano in prikazano - pošljite ga novemu članu.</p>
+                <p style={{ fontSize: '12px', color: '#fbbf24', lineHeight: '1.5' }}>⚠️ Opozorilo: Po ustvarjanju člana boste odjavljeni! Pošljite novemu članu email in geslo.</p>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '8px' }}>
                 <button
                   type="button"
                   onClick={() => {
                     setShowNewMemberForm(false);
-                    setNewMemberData({ email: '', ime: '', priimek: '', telefon: '', morsStevilo: '', role: 'user' });
+                    setNewMemberData({ email: '', ime: '', priimek: '', telefon: '', morsStevilo: '', role: 'user', password: '' });
                   }}
                   style={{ padding: '12px', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '10px', color: '#fff', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
                 >
