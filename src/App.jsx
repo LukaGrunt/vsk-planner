@@ -2685,7 +2685,18 @@ function App() {
 
   const toggleMembershipStatus = async (id) => {
     const m = members.find(x => x.id === id);
-    try { await updateDoc(doc(db, 'members', id), { membershipPaid: !m.membershipPaid }); loadMembers(); } catch (e) {}
+    if (!m) {
+      showToast('Član ni najden', 'error');
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'members', id), { membershipPaid: !m.membershipPaid });
+      loadMembers();
+      showToast(m.membershipPaid ? 'Označeno kot neplačano' : 'Označeno kot plačano', 'success');
+    } catch (e) {
+      console.error('Toggle membership error:', e);
+      showToast('Napaka: ' + e.message, 'error');
+    }
   };
 
   const handleCreateMember = async (memberData) => {
