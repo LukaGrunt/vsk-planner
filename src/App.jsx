@@ -2742,6 +2742,72 @@ function App() {
     }
   };
 
+  // One-time migration: Fix member document ID mismatch
+  const handleMigrateSuperadmin = async () => {
+    if (!currentUser) {
+      showToast('Niste prijavljeni', 'error');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      '⚠️ POMEMBNO: Ta funkcija bo:\n\n' +
+      '1. Ustvarila nov dokument člana z pravilnim ID (vaš auth UID)\n' +
+      '2. Kopirala vse podatke iz starega dokumenta\n' +
+      '3. Izbrisala stari dokument\n\n' +
+      'To je enkratna migracija za admin@vsk.si.\n\n' +
+      'Nadaljujem?'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      showToast('Migriram dokument...', 'info');
+
+      // Step 1: Get old document data
+      const oldDocId = 'vsOzMTTriZiJ3ij7LQct';
+      const oldDocRef = doc(db, 'members', oldDocId);
+      const oldDocSnap = await getDoc(oldDocRef);
+
+      if (!oldDocSnap.exists()) {
+        showToast('Stari dokument ne obstaja', 'error');
+        return;
+      }
+
+      const oldData = oldDocSnap.data();
+
+      // Step 2: Create new document with correct ID (auth UID)
+      const newDocId = currentUser.uid;
+      const newDocRef = doc(db, 'members', newDocId);
+
+      // Check if new document already exists
+      const newDocSnap = await getDoc(newDocRef);
+      if (newDocSnap.exists()) {
+        showToast('Dokument z pravilnim ID že obstaja!', 'error');
+        return;
+      }
+
+      // Copy all data to new document
+      await setDoc(newDocRef, {
+        ...oldData,
+        migratedFrom: oldDocId,
+        migratedAt: new Date()
+      });
+
+      // Step 3: Delete old document
+      await deleteDoc(oldDocRef);
+
+      showToast('✅ Migracija uspešna! Osvežujem...', 'success');
+
+      // Reload to pick up new document
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    } catch (error) {
+      console.error('Migration error:', error);
+      showToast('Napaka pri migraciji: ' + error.message, 'error');
+    }
+  };
+
   // Export backup of all data to JSON file
   const handleExportBackup = async () => {
     try {
@@ -3375,6 +3441,15 @@ function App() {
                   </div>
                   <ChevronRight size={22} color="rgba(255,255,255,0.3)" />
                 </div>
+                {currentUser?.email === 'admin@vsk.si' && (
+                  <div onClick={handleMigrateSuperadmin} style={{ ...glassCardStyle, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(245, 158, 11, 0.1) 100%)', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                      <div style={{ width: '46px', height: '46px', borderRadius: '12px', background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px rgba(251, 191, 36, 0.3)' }}><RotateCcw size={22} color="#fff" /></div>
+                      <div><h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fbbf24', marginBottom: '2px' }}>🔧 Migriraj račun</h3><p style={{ color: 'rgba(251, 191, 36, 0.7)', fontSize: '12px' }}>Enkratna popravek ID dokumenta (samo admin@vsk.si)</p></div>
+                    </div>
+                    <ChevronRight size={22} color="rgba(251, 191, 36, 0.5)" />
+                  </div>
+                )}
               </>
             )}
           </div>

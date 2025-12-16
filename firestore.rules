@@ -4,7 +4,9 @@ service cloud.firestore {
 
     // Helper function to get user's role from members collection
     function getUserRole() {
-      return get(/databases/$(database)/documents/members/$(request.auth.uid)).data.role;
+      return exists(/databases/$(database)/documents/members/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/members/$(request.auth.uid)).data.role
+        : 'user';
     }
 
     // Helper function to check if user is admin or superadmin
