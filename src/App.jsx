@@ -2216,10 +2216,9 @@ function App() {
       if (user) {
         setCurrentUser(user);
         try {
-          const q = query(collection(db, 'members'), where('email', '==', user.email));
-          const snap = await getDocs(q);
-          if (!snap.empty) {
-            const memberDoc = snap.docs[0];
+          // Direct lookup by UID (document ID matches auth UID after migration)
+          const memberDoc = await getDoc(doc(db, 'members', user.uid));
+          if (memberDoc.exists()) {
             const data = memberDoc.data();
             setUserRole(data.role || 'user');
             setView(data.role === 'admin' || data.role === 'superadmin' ? 'admin-dashboard' : 'news');
@@ -2227,13 +2226,13 @@ function App() {
             // Track first login and last login (don't let this fail silently affect user role)
             try {
               if (!data.hasLoggedIn) {
-                await updateDoc(doc(db, 'members', memberDoc.id), {
+                await updateDoc(doc(db, 'members', user.uid), {
                   hasLoggedIn: true,
                   firstLoginAt: new Date(),
                   lastLoginAt: new Date()
                 });
               } else {
-                await updateDoc(doc(db, 'members', memberDoc.id), { lastLoginAt: new Date() });
+                await updateDoc(doc(db, 'members', user.uid), { lastLoginAt: new Date() });
               }
             } catch (updateError) {
               // Login tracking failed but don't reset user role
@@ -3541,7 +3540,7 @@ function App() {
         </div>
       )}
 
-      {view === 'admin-popups' && (userRole === 'admin' || userRole === 'superadmin') && (
+      {view === 'admin-popups' && userRole === 'superadmin' && (
         <div className="page-scroll">
           <div style={pageContentPadding}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -3581,7 +3580,7 @@ function App() {
         </div>
       )}
 
-      {view === 'admin-featured' && (userRole === 'admin' || userRole === 'superadmin') && (
+      {view === 'admin-featured' && userRole === 'superadmin' && (
         <div className="page-scroll">
           <div style={pageContentPadding}>
           <h1 style={{ fontSize: '22px', fontWeight: '700', color: '#fff', marginBottom: '16px' }}>Izpostavljen članek</h1>

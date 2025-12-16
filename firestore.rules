@@ -86,13 +86,22 @@ service cloud.firestore {
         request.auth.uid == resource.data.authorId;
     }
 
+    // Popups collection - SECURED
+    match /popups/{popupId} {
+      // Anyone authenticated can read popups
+      allow read: if request.auth != null;
+
+      // Only superadmin can create/update/delete popups
+      allow create, update, delete: if request.auth != null && isSuperAdmin();
+    }
+
     // Featured collection - SECURED
     match /featured/{docId} {
       // Anyone authenticated can read
       allow read: if request.auth != null;
 
-      // Only admin/superadmin can create/update/delete
-      allow create, update, delete: if request.auth != null && isAdmin();
+      // Only superadmin can create/update/delete featured articles
+      allow create, update, delete: if request.auth != null && isSuperAdmin();
     }
   }
 }
