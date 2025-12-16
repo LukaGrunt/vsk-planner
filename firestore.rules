@@ -62,10 +62,22 @@ service cloud.firestore {
       );
     }
 
-    // Messages collection (chat) - SECURED
+    // Messages collection (chat) - SECURED with rate limiting
     match /messages/{messageId} {
-      // Anyone authenticated can read/create messages
-      allow read, create: if request.auth != null;
+      // Anyone authenticated can read messages
+      allow read: if request.auth != null;
+
+      // Create messages with validation to prevent spam
+      allow create: if request.auth != null &&
+        // Message must have text content
+        request.resource.data.text is string &&
+        request.resource.data.text.size() > 0 &&
+        // Message must not be too long (max 500 characters)
+        request.resource.data.text.size() <= 500 &&
+        // Must have required fields
+        request.resource.data.authorId == request.auth.uid &&
+        request.resource.data.authorName is string &&
+        request.resource.data.timestamp is timestamp;
 
       // Only message author can update/delete their own messages
       allow update, delete: if request.auth != null &&

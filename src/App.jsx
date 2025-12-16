@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider, sendPasswordResetEmail } from 'firebase/auth';
 import { getFirestore, collection, getDocs, getDoc, addDoc, updateDoc, deleteDoc, doc, query, where, onSnapshot, orderBy, setDoc, limit, startAfter } from 'firebase/firestore';
-import { Calendar, Target, User, Users, FileText, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Edit2, Trash2, X, BarChart3, Trophy, Volume2, Send, Upload, Check, AlertCircle, Link, ExternalLink, Timer, UserPlus, RotateCcw } from 'lucide-react';
+import { Calendar, Target, User, Users, FileText, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Edit2, Trash2, X, BarChart3, Trophy, Volume2, Send, Upload, Check, AlertCircle, Link, ExternalLink, Timer, UserPlus, RotateCcw, Download } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
 // Initialize Sentry for error monitoring
@@ -2731,6 +2731,53 @@ function App() {
     }
   };
 
+  // Export backup of all data to JSON file
+  const handleExportBackup = async () => {
+    try {
+      showToast('Pripravljam varnostno kopijo...', 'info');
+
+      // Fetch all data
+      const [postsSnap, membersSnap, messagesSnap, featuredSnap] = await Promise.all([
+        getDocs(collection(db, 'posts')),
+        getDocs(collection(db, 'members')),
+        getDocs(collection(db, 'messages')),
+        getDocs(collection(db, 'featured'))
+      ]);
+
+      const backup = {
+        exportDate: new Date().toISOString(),
+        exportBy: currentUser.email,
+        version: '1.0',
+        data: {
+          posts: postsSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+          members: membersSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+          messages: messagesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+          featured: featuredSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+        },
+        stats: {
+          postsCount: postsSnap.size,
+          membersCount: membersSnap.size,
+          messagesCount: messagesSnap.size
+        }
+      };
+
+      // Create downloadable file
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vsk-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showToast('Varnostna kopija prenesena!', 'success');
+    } catch (error) {
+      showToast('Napaka pri izvozu: ' + error.message, 'error');
+    }
+  };
+
   const saveProfileData = async () => {
     try {
       const q = query(collection(db, 'members'), where('email', '==', currentUser.email));
@@ -3307,6 +3354,13 @@ function App() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                     <div style={{ width: '46px', height: '46px', borderRadius: '12px', background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px rgba(59, 130, 246, 0.3)' }}><Users size={22} color="#fff" /></div>
                     <div><h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '2px' }}>{t.members}</h3><p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>{t.rolesMembership}</p></div>
+                  </div>
+                  <ChevronRight size={22} color="rgba(255,255,255,0.3)" />
+                </div>
+                <div onClick={handleExportBackup} style={{ ...glassCardStyle, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{ width: '46px', height: '46px', borderRadius: '12px', background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px rgba(139, 92, 246, 0.3)' }}><Download size={22} color="#fff" /></div>
+                    <div><h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '2px' }}>Izvozi varnostno kopijo</h3><p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>Prenesi vse podatke (JSON)</p></div>
                   </div>
                   <ChevronRight size={22} color="rgba(255,255,255,0.3)" />
                 </div>
