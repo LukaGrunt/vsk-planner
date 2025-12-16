@@ -2190,20 +2190,28 @@ function App() {
             const data = memberDoc.data();
             setUserRole(data.role || 'user');
             setView(data.role === 'admin' || data.role === 'superadmin' ? 'admin-dashboard' : 'news');
-            
-            // Track first login and last login
-            if (!data.hasLoggedIn) {
-              await updateDoc(doc(db, 'members', memberDoc.id), { 
-                hasLoggedIn: true, 
-                firstLoginAt: new Date(),
-                lastLoginAt: new Date()
-              });
-            } else {
-              await updateDoc(doc(db, 'members', memberDoc.id), { lastLoginAt: new Date() });
+
+            // Track first login and last login (don't let this fail silently affect user role)
+            try {
+              if (!data.hasLoggedIn) {
+                await updateDoc(doc(db, 'members', memberDoc.id), {
+                  hasLoggedIn: true,
+                  firstLoginAt: new Date(),
+                  lastLoginAt: new Date()
+                });
+              } else {
+                await updateDoc(doc(db, 'members', memberDoc.id), { lastLoginAt: new Date() });
+              }
+            } catch (updateError) {
+              // Login tracking failed but don't reset user role
             }
           } else { setUserRole('user'); setView('news'); }
           requestNotificationPermission().then(setNotificationsEnabled);
-        } catch (e) { setUserRole('user'); setView('news'); }
+        } catch (e) {
+          // Only reset role if we couldn't load member data at all
+          setUserRole('user');
+          setView('news');
+        }
       } else { setCurrentUser(null); setUserRole(null); setView('home'); }
       setLoading(false);
     });
