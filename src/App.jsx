@@ -2954,11 +2954,12 @@ function App() {
     if (!messageText) return;
     setIsLoading(true);
     try {
-      await addDoc(collection(db, 'messages'), { 
-        text: messageText, 
-        author: currentUser.email, 
-        authorName: profileData.ime && profileData.priimek ? `${profileData.ime} ${profileData.priimek}` : currentUser.email, 
-        timestamp: new Date() 
+      await addDoc(collection(db, 'messages'), {
+        text: messageText,
+        authorId: currentUser.uid,
+        author: currentUser.email,
+        authorName: profileData.ime && profileData.priimek ? `${profileData.ime} ${profileData.priimek}` : currentUser.email,
+        timestamp: new Date()
       });
       setNewMessage('');
       setShowMentions(false);
@@ -3540,7 +3541,7 @@ function App() {
         </div>
       )}
 
-      {view === 'admin-popups' && userRole === 'superadmin' && (
+      {view === 'admin-popups' && (userRole === 'admin' || userRole === 'superadmin') && (
         <div className="page-scroll">
           <div style={pageContentPadding}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -3580,7 +3581,7 @@ function App() {
         </div>
       )}
 
-      {view === 'admin-featured' && userRole === 'superadmin' && (
+      {view === 'admin-featured' && (userRole === 'admin' || userRole === 'superadmin') && (
         <div className="page-scroll">
           <div style={pageContentPadding}>
           <h1 style={{ fontSize: '22px', fontWeight: '700', color: '#fff', marginBottom: '16px' }}>Izpostavljen članek</h1>
