@@ -805,7 +805,19 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
                 </div>
               )}
 
-              {isSignedUp ? (
+              {isPast || isLockedOut ? (
+                <div style={{
+                  background: 'rgba(107, 114, 128, 0.2)',
+                  color: '#9ca3af',
+                  padding: '14px',
+                  borderRadius: '12px',
+                  textAlign: 'center',
+                  fontSize: '15px',
+                  fontWeight: '600'
+                }}>
+                  {isPast ? 'Dogodek je mimo' : 'Prijave zaprte'}
+                </div>
+              ) : isSignedUp ? (
                 <button
                   onClick={() => onCancelRSVP(post.id)}
                   style={{
