@@ -1,9 +1,35 @@
 import React, { useState, useEffect, useRef } from 'react';
+import * as Sentry from '@sentry/react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider, sendPasswordResetEmail } from 'firebase/auth';
 import { getFirestore, collection, getDocs, getDoc, addDoc, updateDoc, deleteDoc, doc, query, where, onSnapshot, orderBy, setDoc, limit, startAfter } from 'firebase/firestore';
 import { Calendar, Target, User, Users, FileText, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Edit2, Trash2, X, BarChart3, Trophy, Volume2, Send, Upload, Check, AlertCircle, Link, ExternalLink, Timer, UserPlus, RotateCcw } from 'lucide-react';
 import html2canvas from 'html2canvas';
+
+// Initialize Sentry for error monitoring
+Sentry.init({
+  dsn: "YOUR_SENTRY_DSN_HERE", // Replace this with your actual Sentry DSN
+  environment: window.location.hostname === 'localhost' ? 'development' : 'production',
+  integrations: [
+    Sentry.browserTracingIntegration(),
+    Sentry.replayIntegration({
+      maskAllText: false,
+      blockAllMedia: false,
+    }),
+  ],
+  // Performance Monitoring
+  tracesSampleRate: 0.1, // Capture 10% of transactions
+  // Session Replay
+  replaysSessionSampleRate: 0.1, // Record 10% of sessions
+  replaysOnErrorSampleRate: 1.0, // Record 100% of sessions with errors
+  // Don't send errors in development
+  beforeSend(event, hint) {
+    if (window.location.hostname === 'localhost') {
+      return null; // Don't send to Sentry in development
+    }
+    return event;
+  },
+});
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -17,7 +43,14 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    // Error caught - could send to logging service here
+    // Send error to Sentry
+    Sentry.captureException(error, {
+      contexts: {
+        react: {
+          componentStack: errorInfo.componentStack,
+        },
+      },
+    });
   }
 
   render() {
