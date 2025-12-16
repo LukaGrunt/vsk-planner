@@ -26,12 +26,14 @@ service cloud.firestore {
       // Only superadmin can create new members
       allow create: if request.auth != null && isSuperAdmin();
 
-      // User can update their own profile, OR superadmin can update anyone
+      // User can update their own profile, OR superadmin can update anyone, OR admin can update membershipPaid
       // BUT role changes require superadmin
       allow update: if request.auth != null && (
         (request.auth.uid == memberId &&
-         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']))) // Can't change own role
-        || isSuperAdmin() // Superadmin can change anything
+         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']))) || // Can't change own role
+        isSuperAdmin() || // Superadmin can change anything
+        (isAdmin() && // Admin can only update membershipPaid
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['membershipPaid']))
       );
 
       // Only superadmin can delete members
