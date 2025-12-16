@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider, sendPasswordResetEmail } from 'firebase/auth';
 import { getFirestore, collection, getDocs, getDoc, addDoc, updateDoc, deleteDoc, doc, query, where, onSnapshot, orderBy, setDoc, limit, startAfter } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { Calendar, Target, User, Users, FileText, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Edit2, Trash2, X, BarChart3, Trophy, Volume2, Send, Upload, Check, AlertCircle, Link, Image, ExternalLink, Timer, UserPlus, RotateCcw } from 'lucide-react';
+import { Calendar, Target, User, Users, FileText, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Edit2, Trash2, X, BarChart3, Trophy, Volume2, Send, Upload, Check, AlertCircle, Link, ExternalLink, Timer, UserPlus, RotateCcw } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
 // Error Boundary Component
@@ -138,7 +137,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const storage = getStorage(app);
 
 const EVENT_COLORS = {
   training: { bg: '#c1372a', text: '#fff', label: 'Trening', icon: Target, calendarColor: '#c1372a' },
@@ -509,22 +507,6 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
             {post.time && <span>🕐 {post.time}</span>}
           </div>
         </div>
-
-        {/* Photo if exists */}
-        {post.photoURL && (
-          <div style={{ padding: '16px 16px 0' }}>
-            <img 
-              src={post.photoURL} 
-              alt="Event" 
-              style={{
-                width: '100%',
-                borderRadius: '12px',
-                maxHeight: '200px',
-                objectFit: 'cover'
-              }}
-            />
-          </div>
-        )}
 
         {/* Content */}
         <div style={{ padding: '20px' }}>
@@ -908,30 +890,13 @@ const PostForm = ({ post, onSave, onCancel, members, t }) => {
       title: '', description: '', type: defaultType, date: '', time: '', location: '',
       showInNews: showInNewsDefault, amount: '', maxParticipants: '', trainer: '',
       trainerContact: '', rsvps: [], linkURL: '', linkText: '', hasLink: false,
-      photoURL: '', ...post
+      ...post
     };
   });
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef(null);
 
   const handleTypeChange = (newType) => {
     const showInNewsDefault = newType === 'announcement' || newType === 'payment';
     setFormData({ ...formData, type: newType, showInNews: showInNewsDefault });
-  };
-
-  const handlePhotoUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const storageRef = ref(storage, `event-photos/${Date.now()}-${file.name}`);
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
-      setFormData({ ...formData, photoURL: url });
-    } catch (err) {
-      alert('Napaka pri nalaganju slike');
-    }
-    setUploading(false);
   };
 
   return (
@@ -973,30 +938,6 @@ const PostForm = ({ post, onSave, onCancel, members, t }) => {
             <label style={{ display: 'block', color: '#888', fontSize: '12px', marginBottom: '6px' }}>{t.title}</label>
             <input type="text" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }} />
-          </div>
-
-          {/* Photo upload */}
-          <div>
-            <label style={{ display: 'block', color: '#888', fontSize: '12px', marginBottom: '6px' }}>{t.photoOptional}</label>
-            <input type="file" ref={fileInputRef} accept="image/*" onChange={handlePhotoUpload} style={{ display: 'none' }} />
-            {formData.photoURL ? (
-              <div style={{ position: 'relative' }}>
-                <img src={formData.photoURL} alt="Preview" style={{ width: '100%', height: '120px', objectFit: 'cover', borderRadius: '10px' }} />
-                <button onClick={() => setFormData({ ...formData, photoURL: '' })} style={{
-                  position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,0,0,0.7)',
-                  border: 'none', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff'
-                }}><X size={14} /></button>
-              </div>
-            ) : (
-              <button onClick={() => fileInputRef.current?.click()} disabled={uploading} style={{
-                width: '100%', padding: '20px', background: 'rgba(0,0,0,0.3)', border: '2px dashed rgba(255,255,255,0.2)',
-                borderRadius: '10px', color: '#888', fontSize: '14px', cursor: 'pointer', display: 'flex',
-                alignItems: 'center', justifyContent: 'center', gap: '8px'
-              }}>
-                {uploading ? t.uploading : <><Image size={18} /> {t.uploadPhoto}</>}
-              </button>
-            )}
           </div>
 
           {/* Description */}
@@ -1536,7 +1477,6 @@ const SlimEventCard = ({ post, onShowDetail }) => {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-          {post.photoURL && <Image size={14} color="rgba(255,255,255,0.5)" />}
           {post.linkURL && <Link size={14} color="#3b82f6" />}
           {showTitle && post.date && <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>{formatDate(post.date)}</span>}
           {showTitle && post.time && <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>{post.time}</span>}
@@ -1805,7 +1745,6 @@ function App() {
       editPost: 'Uredi objavo',
       title: 'Naslov',
       description: 'Opis',
-      uploadPhoto: 'Naloži fotografijo',
       maxParticipants: 'Maks. udeležencev',
       date: 'Datum',
       time: 'Čas',
@@ -1817,7 +1756,6 @@ function App() {
       showInNews: 'Prikaži v novicah',
       defaultOff: '(privzeto izključeno)',
       defaultOn: '(privzeto vključeno)',
-      imageUploadError: 'Napaka pri nalaganju slike',
       // Popup form
       newPopup: 'Novo obvestilo',
       editPopup: 'Uredi obvestilo',
@@ -1907,8 +1845,6 @@ function App() {
       // Additional keys for forms
       type: 'Tip',
       amount: 'Znesek',
-      photoOptional: 'Fotografija (opcijsko)',
-      uploading: 'Nalaganje...',
       leaderTrainer: 'Vodja / Trener',
       selectLeader: 'Izberi vodjo...',
       contactPlaceholder: 'Kontakt: +386 XX XXX XXX',
@@ -2051,7 +1987,6 @@ function App() {
       editPost: 'Edit post',
       title: 'Title',
       description: 'Description',
-      uploadPhoto: 'Upload photo',
       maxParticipants: 'Max participants',
       date: 'Date',
       time: 'Time',
@@ -2063,7 +1998,6 @@ function App() {
       showInNews: 'Show in news',
       defaultOff: '(default off)',
       defaultOn: '(default on)',
-      imageUploadError: 'Error uploading image',
       // Popup form
       newPopup: 'New notification',
       editPopup: 'Edit notification',
@@ -2153,8 +2087,6 @@ function App() {
       // Additional keys for forms
       type: 'Type',
       amount: 'Amount',
-      photoOptional: 'Photo (optional)',
-      uploading: 'Uploading...',
       leaderTrainer: 'Leader / Trainer',
       selectLeader: 'Select leader...',
       contactPlaceholder: 'Contact: +386 XX XXX XXX',
@@ -3389,7 +3321,6 @@ function App() {
                   )}
                   <div style={{ display: 'flex', gap: '6px', marginLeft: '8px' }}>
                     {post.showInNews && <span style={{ fontSize: '12px' }}>📰</span>}
-                    {post.photoURL && <Image size={14} color="rgba(255,255,255,0.4)" />}
                     {post.linkURL && <Link size={14} color="#3b82f6" />}
                   </div>
                 </div>
