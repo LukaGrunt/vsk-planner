@@ -95,7 +95,16 @@ service cloud.firestore {
       allow create, update, delete: if request.auth != null && isSuperAdmin();
     }
 
-    // Featured collection - SECURED
+    // Settings collection - SECURED (includes featuredArticle)
+    match /settings/{docId} {
+      // Anyone authenticated can read settings
+      allow read: if request.auth != null;
+
+      // Only superadmin can create/update/delete settings
+      allow create, update, delete: if request.auth != null && isSuperAdmin();
+    }
+
+    // Featured collection - SECURED (legacy, keeping for safety)
     match /featured/{docId} {
       // Anyone authenticated can read
       allow read: if request.auth != null;
