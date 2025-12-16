@@ -8,7 +8,7 @@ import html2canvas from 'html2canvas';
 
 // Initialize Sentry for error monitoring
 Sentry.init({
-  dsn: "YOUR_SENTRY_DSN_HERE", // Replace this with your actual Sentry DSN
+  dsn: "https://87de0b8a736fbb5f713d70ba17c24c33@o4510545349574656.ingest.de.sentry.io/4510545357111376", // Replace this with your actual Sentry DSN
   environment: window.location.hostname === 'localhost' ? 'development' : 'production',
   integrations: [
     Sentry.browserTracingIntegration(),
