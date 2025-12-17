@@ -2240,15 +2240,23 @@ function App() {
   // Helper function to load user profile from Supabase
   const loadUserProfile = async (user) => {
     try {
+      console.log('🔍 Loading profile for user:', user.id, user.email);
+
       const { data, error } = await supabase
         .from('members')
         .select('*')
         .eq('user_id', user.id)
         .single();
 
-      if (error) throw error;
+      console.log('📦 Database response:', { data, error });
+
+      if (error) {
+        console.error('❌ Database error:', error);
+        throw error;
+      }
 
       if (data) {
+        console.log('✅ Profile loaded! Role:', data.role);
         setUserRole(data.role || 'user');
         setView(data.role === 'admin' || data.role === 'superadmin' ? 'admin-dashboard' : 'news');
 
@@ -2270,14 +2278,18 @@ function App() {
               .eq('user_id', user.id);
           }
         } catch (updateError) {
+          console.warn('⚠️ Login tracking failed:', updateError);
           // Login tracking failed but don't reset user role
         }
       } else {
+        console.warn('⚠️ No profile data found for user');
         setUserRole('user');
         setView('news');
       }
       requestNotificationPermission().then(setNotificationsEnabled);
     } catch (e) {
+      console.error('💥 CRITICAL ERROR loading profile:', e);
+      alert(`Error loading profile: ${e.message}\n\nDefaulting to user role. Check console for details.`);
       setUserRole('user');
       setView('news');
     }
