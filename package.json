@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@sentry/react": "^10.30.0",
+    "@supabase/supabase-js": "^2.88.0",
     "firebase": "^10.7.0",
     "html2canvas": "^1.4.1",
     "lucide-react": "^0.294.0",

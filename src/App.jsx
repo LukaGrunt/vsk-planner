@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Sentry from '@sentry/react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider, sendPasswordResetEmail, createUserWithEmailAndPassword } from 'firebase/auth';
-import { getFirestore, collection, getDocs, getDoc, addDoc, updateDoc, deleteDoc, doc, query, where, onSnapshot, orderBy, setDoc, limit, startAfter } from 'firebase/firestore';
+import { supabase } from './supabaseClient';
 import { Calendar, Target, User, Users, FileText, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Edit2, Trash2, X, BarChart3, Trophy, Volume2, Send, Upload, Check, AlertCircle, Link, ExternalLink, Timer, UserPlus, RotateCcw, Download } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
@@ -156,20 +154,6 @@ class ErrorBoundary extends React.Component {
     return this.props.children;
   }
 }
-
-const firebaseConfig = {
-  apiKey: "AIzaSyC0oWYMXzK4Jx4xudkcrSo2p-s7Ijsohxo",
-  authDomain: "vsk-planner.firebaseapp.com",
-  projectId: "vsk-planner",
-  storageBucket: "vsk-planner.firebasestorage.app",
-  messagingSenderId: "389967500126",
-  appId: "1:389967500126:web:bb836e0ff4243f6e68f5cf",
-  measurementId: "G-WM8CWJN5LM"
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
 
 const EVENT_COLORS = {
   training: { bg: '#c1372a', text: '#fff', label: 'Trening', icon: Target, calendarColor: '#c1372a' },
@@ -2224,43 +2208,81 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setCurrentUser(user);
-        try {
-          // Direct lookup by UID (document ID matches auth UID after migration)
-          const memberDoc = await getDoc(doc(db, 'members', user.uid));
-          if (memberDoc.exists()) {
-            const data = memberDoc.data();
-            setUserRole(data.role || 'user');
-            setView(data.role === 'admin' || data.role === 'superadmin' ? 'admin-dashboard' : 'news');
-
-            // Track first login and last login (don't let this fail silently affect user role)
-            try {
-              if (!data.hasLoggedIn) {
-                await updateDoc(doc(db, 'members', user.uid), {
-                  hasLoggedIn: true,
-                  firstLoginAt: new Date(),
-                  lastLoginAt: new Date()
-                });
-              } else {
-                await updateDoc(doc(db, 'members', user.uid), { lastLoginAt: new Date() });
-              }
-            } catch (updateError) {
-              // Login tracking failed but don't reset user role
-            }
-          } else { setUserRole('user'); setView('news'); }
-          requestNotificationPermission().then(setNotificationsEnabled);
-        } catch (e) {
-          // Only reset role if we couldn't load member data at all
-          setUserRole('user');
-          setView('news');
-        }
-      } else { setCurrentUser(null); setUserRole(null); setView('home'); }
-      setLoading(false);
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setCurrentUser(session.user);
+        loadUserProfile(session.user);
+      } else {
+        setCurrentUser(null);
+        setUserRole(null);
+        setView('home');
+        setLoading(false);
+      }
     });
-    return () => unsubscribe();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        setCurrentUser(session.user);
+        await loadUserProfile(session.user);
+      } else {
+        setCurrentUser(null);
+        setUserRole(null);
+        setView('home');
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  // Helper function to load user profile from Supabase
+  const loadUserProfile = async (user) => {
+    try {
+      const { data, error } = await supabase
+        .from('members')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setUserRole(data.role || 'user');
+        setView(data.role === 'admin' || data.role === 'superadmin' ? 'admin-dashboard' : 'news');
+
+        // Track login
+        try {
+          if (!data.has_logged_in) {
+            await supabase
+              .from('members')
+              .update({
+                has_logged_in: true,
+                first_login_at: new Date().toISOString(),
+                last_login_at: new Date().toISOString()
+              })
+              .eq('user_id', user.id);
+          } else {
+            await supabase
+              .from('members')
+              .update({ last_login_at: new Date().toISOString() })
+              .eq('user_id', user.id);
+          }
+        } catch (updateError) {
+          // Login tracking failed but don't reset user role
+        }
+      } else {
+        setUserRole('user');
+        setView('news');
+      }
+      requestNotificationPermission().then(setNotificationsEnabled);
+    } catch (e) {
+      setUserRole('user');
+      setView('news');
+    }
+    setLoading(false);
+  };
 
   useEffect(() => { loadPosts(); }, []);
 
@@ -2380,29 +2402,64 @@ function App() {
 
   useEffect(() => {
     if (!currentUser) return;
-    const q = query(collection(db, 'messages'), orderBy('timestamp', 'asc'));
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const week = new Date(); week.setDate(week.getDate() - 7);
-      setMessages(data.filter(m => (m.timestamp?.toDate() || new Date(0)) > week));
-    });
-    return () => unsub();
+
+    // Initial load of messages from last week
+    const loadMessages = async () => {
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .gte('timestamp', weekAgo.toISOString())
+        .order('timestamp', { ascending: true });
+
+      if (!error && data) {
+        setMessages(data);
+      }
+    };
+
+    loadMessages();
+
+    // Real-time subscription for new messages
+    const subscription = supabase
+      .channel('messages')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'messages' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setMessages(prev => [...prev, payload.new]);
+          } else if (payload.eventType === 'DELETE') {
+            setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [currentUser]);
 
   const loadProfileData = async () => {
     try {
       await withRetry(async () => {
-        const q = query(collection(db, 'members'), where('email', '==', currentUser.email));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const d = snap.docs[0].data();
-          setProfileData({ 
-            ime: sanitizeInput(d.ime) || '', 
-            priimek: sanitizeInput(d.priimek) || '', 
-            email: d.email || currentUser.email, 
-            telefon: sanitizeInput(d.telefon) || '', 
-            morsStevilo: sanitizeInput(d.morsStevilo) || '', 
-            orozneListine: Array.isArray(d.orozneListine) ? d.orozneListine : [] 
+        const { data, error } = await supabase
+          .from('members')
+          .select('*')
+          .eq('email', currentUser.email)
+          .single();
+
+        if (error) throw error;
+
+        if (data) {
+          setProfileData({
+            ime: sanitizeInput(data.ime) || '',
+            priimek: sanitizeInput(data.priimek) || '',
+            email: data.email || currentUser.email,
+            telefon: sanitizeInput(data.telefon) || '',
+            morsStevilo: sanitizeInput(data.mors_stevilo) || '',
+            orozneListine: Array.isArray(data.orozne_listine) ? data.orozne_listine : []
           });
         }
       });
@@ -2414,25 +2471,24 @@ function App() {
   const loadPosts = async () => {
     try {
       await withRetry(async () => {
-        const q = query(
-          collection(db, 'posts'),
-          orderBy('date', 'desc'),
-          limit(POSTS_PER_PAGE + 1) // Fetch one extra to check if there are more
-        );
-        const snap = await getDocs(q);
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const { data, error } = await supabase
+          .from('posts')
+          .select('*')
+          .order('date', { ascending: false })
+          .range(0, POSTS_PER_PAGE);
+
+        if (error) throw error;
 
         // Check if there are more posts
-        const hasMore = data.length > POSTS_PER_PAGE;
-        setHasMorePosts(hasMore);
+        setHasMorePosts(data.length === POSTS_PER_PAGE + 1);
 
         // Remove the extra document if it exists
-        const posts = hasMore ? data.slice(0, POSTS_PER_PAGE) : data;
+        const posts = data.length === POSTS_PER_PAGE + 1 ? data.slice(0, POSTS_PER_PAGE) : data;
         setPosts(posts);
 
         // Store last document for pagination
         if (posts.length > 0) {
-          setLastPostDoc(snap.docs[posts.length - 1]);
+          setLastPostDoc(posts[posts.length - 1]);
         }
       });
     } catch (e) {
@@ -2446,17 +2502,17 @@ function App() {
     if (!lastPostDoc) return;
     try {
       await withRetry(async () => {
-        const q = query(
-          collection(db, 'posts'),
-          orderBy('date', 'desc'),
-          startAfter(lastPostDoc),
-          limit(POSTS_PER_PAGE + 1)
-        );
-        const snap = await getDocs(q);
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const currentCount = posts.length;
+        const { data, error } = await supabase
+          .from('posts')
+          .select('*')
+          .order('date', { ascending: false })
+          .range(currentCount, currentCount + POSTS_PER_PAGE);
+
+        if (error) throw error;
 
         // Check if there are more posts
-        const hasMore = data.length > POSTS_PER_PAGE;
+        const hasMore = data.length === POSTS_PER_PAGE + 1;
         setHasMorePosts(hasMore);
 
         // Remove the extra document if it exists
@@ -2465,7 +2521,7 @@ function App() {
 
         // Store last document for next pagination
         if (newPosts.length > 0) {
-          setLastPostDoc(snap.docs[newPosts.length - 1]);
+          setLastPostDoc(newPosts[newPosts.length - 1]);
         }
       });
     } catch (e) {
@@ -2477,25 +2533,34 @@ function App() {
   const loadMembers = async () => {
     try {
       await withRetry(async () => {
-        const q = query(
-          collection(db, 'members'),
-          limit(MEMBERS_PER_PAGE + 1) // Fetch one extra to check if there are more
-        );
-        const snap = await getDocs(q);
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const { data, error } = await supabase
+          .from('members')
+          .select('*')
+          .range(0, MEMBERS_PER_PAGE);
+
+        if (error) throw error;
 
         // Check if there are more members
-        const hasMore = data.length > MEMBERS_PER_PAGE;
-        setHasMoreMembers(hasMore);
+        setHasMoreMembers(data.length === MEMBERS_PER_PAGE + 1);
 
         // Remove the extra document if it exists
-        const members = hasMore ? data.slice(0, MEMBERS_PER_PAGE) : data;
-        setMembers(members);
+        const members = data.length === MEMBERS_PER_PAGE + 1 ? data.slice(0, MEMBERS_PER_PAGE) : data;
 
-        // Store last document for pagination
-        if (members.length > 0) {
-          setLastMemberDoc(snap.docs[members.length - 1]);
-        }
+        // Convert snake_case to camelCase for UI
+        const membersFormatted = members.map(m => ({
+          ...m,
+          morsStevilo: m.mors_stevilo,
+          membershipPaid: m.membership_paid,
+          orozneListine: m.orozne_listine,
+          hasLoggedIn: m.has_logged_in,
+          firstLoginAt: m.first_login_at,
+          lastLoginAt: m.last_login_at,
+          createdAt: m.created_at,
+          createdBy: m.created_by,
+          userId: m.user_id
+        }));
+
+        setMembers(membersFormatted);
       });
     } catch (e) {
       // Failed to load members - setting empty array
@@ -2505,29 +2570,37 @@ function App() {
   };
 
   const loadMoreMembers = async () => {
-    if (!lastMemberDoc) return;
     try {
       await withRetry(async () => {
-        const q = query(
-          collection(db, 'members'),
-          startAfter(lastMemberDoc),
-          limit(MEMBERS_PER_PAGE + 1)
-        );
-        const snap = await getDocs(q);
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const currentCount = members.length;
+        const { data, error } = await supabase
+          .from('members')
+          .select('*')
+          .range(currentCount, currentCount + MEMBERS_PER_PAGE);
+
+        if (error) throw error;
 
         // Check if there are more members
-        const hasMore = data.length > MEMBERS_PER_PAGE;
-        setHasMoreMembers(hasMore);
+        setHasMoreMembers(data.length === MEMBERS_PER_PAGE + 1);
 
         // Remove the extra document if it exists
-        const newMembers = hasMore ? data.slice(0, MEMBERS_PER_PAGE) : data;
-        setMembers(prev => [...prev, ...newMembers]);
+        const newMembers = data.length === MEMBERS_PER_PAGE + 1 ? data.slice(0, MEMBERS_PER_PAGE) : data;
 
-        // Store last document for next pagination
-        if (newMembers.length > 0) {
-          setLastMemberDoc(snap.docs[newMembers.length - 1]);
-        }
+        // Convert snake_case to camelCase for UI
+        const membersFormatted = newMembers.map(m => ({
+          ...m,
+          morsStevilo: m.mors_stevilo,
+          membershipPaid: m.membership_paid,
+          orozneListine: m.orozne_listine,
+          hasLoggedIn: m.has_logged_in,
+          firstLoginAt: m.first_login_at,
+          lastLoginAt: m.last_login_at,
+          createdAt: m.created_at,
+          createdBy: m.created_by,
+          userId: m.user_id
+        }));
+
+        setMembers(prev => [...prev, ...membersFormatted]);
       });
     } catch (e) {
       // Failed to load more members
@@ -2538,15 +2611,16 @@ function App() {
   const loadPopups = async () => {
     try {
       await withRetry(async () => {
-        const snap = await getDocs(collection(db, 'popups'));
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setPopups(data.sort((a, b) => {
-          const dateA = safeParseDate(a.createdAt) || new Date(0);
-          const dateB = safeParseDate(b.createdAt) || new Date(0);
-          return dateB - dateA;
-        }));
+        const { data, error } = await supabase
+          .from('popups')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        setPopups(data || []);
         // Show active popup to user
-        const active = data.find(p => p.active && !dismissedPopups.includes(p.id));
+        const active = data?.find(p => p.active && !dismissedPopups.includes(p.id));
         if (active) setActivePopup(active);
       });
     } catch (e) {
@@ -2558,10 +2632,16 @@ function App() {
   const loadFeaturedArticle = async () => {
     try {
       await withRetry(async () => {
-        const docRef = doc(db, 'settings', 'featuredArticle');
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          setFeaturedArticle(snap.data());
+        const { data, error } = await supabase
+          .from('settings')
+          .select('featured_article')
+          .eq('id', 'singleton')
+          .single();
+
+        if (error) throw error;
+
+        if (data && data.featured_article) {
+          setFeaturedArticle(data.featured_article);
         } else {
           setFeaturedArticle(null);
         }
@@ -2574,8 +2654,15 @@ function App() {
 
   const saveFeaturedArticle = async (article) => {
     try {
-      const docRef = doc(db, 'settings', 'featuredArticle');
-      await setDoc(docRef, article);
+      const { error } = await supabase
+        .from('settings')
+        .update({
+          featured_article: article,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', 'singleton');
+
+      if (error) throw error;
       setEditingFeatured(null);
       loadFeaturedArticle();
       showToast(t.saved || 'Shranjeno!', 'success');
@@ -2585,9 +2672,18 @@ function App() {
   const handleSavePopup = async (popup) => {
     try {
       if (popup.id) {
-        await updateDoc(doc(db, 'popups', popup.id), popup);
+        const { error } = await supabase
+          .from('popups')
+          .update(popup)
+          .eq('id', popup.id);
+
+        if (error) throw error;
       } else {
-        await addDoc(collection(db, 'popups'), { ...popup, createdAt: new Date() });
+        const { error } = await supabase
+          .from('popups')
+          .insert({ ...popup, created_at: new Date().toISOString() });
+
+        if (error) throw error;
       }
       setEditingPopup(null);
       loadPopups();
@@ -2598,7 +2694,12 @@ function App() {
   const handleDeletePopup = async (id) => {
     if (!window.confirm(t.deleteConfirm)) return;
     try {
-      await deleteDoc(doc(db, 'popups', id));
+      const { error } = await supabase
+        .from('popups')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
       loadPopups();
       showToast(t.deleted || 'Izbrisano', 'success');
     } catch (e) { showToast(t.error || 'Napaka', 'error'); }
@@ -2623,15 +2724,16 @@ function App() {
     setIsLoading(true);
     try {
       setLoginAnimation(true);
-      await signInWithEmailAndPassword(auth, email, password);
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
       localStorage.setItem('vsk-remembered-email', email);
       // Animation will play, then auth state change will handle the rest
-    } catch (e) { 
+    } catch (e) {
       setLoginAnimation(false);
       // Better error messages
-      const errorMsg = e.code === 'auth/invalid-credential' ? (language === 'en' ? 'Invalid email or password' : 'Napačen email ali geslo') :
-                       e.code === 'auth/too-many-requests' ? (language === 'en' ? 'Too many attempts. Try again later.' : 'Preveč poskusov. Poskusite kasneje.') :
-                       e.code === 'auth/network-request-failed' ? (language === 'en' ? 'Network error. Check your connection.' : 'Napaka omrežja. Preverite povezavo.') :
+      const errorMsg = e.message.includes('Invalid login credentials') ? (language === 'en' ? 'Invalid email or password' : 'Napačen email ali geslo') :
+                       e.message.includes('too many') ? (language === 'en' ? 'Too many attempts. Try again later.' : 'Preveč poskusov. Poskusite kasneje.') :
+                       e.message.includes('network') ? (language === 'en' ? 'Network error. Check your connection.' : 'Napaka omrežja. Preverite povezavo.') :
                        (t.error || 'Napaka') + ': ' + e.message;
       showToast(errorMsg, 'error');
     }
@@ -2640,17 +2742,63 @@ function App() {
 
   const handleForgotPassword = async () => {
     if (!loginEmail) { showToast(t.enterEmail, 'error'); return; }
-    try { await sendPasswordResetEmail(auth, loginEmail); showToast(t.emailSent, 'success'); } catch (e) { showToast(t.error + ': ' + e.message, 'error'); }
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(loginEmail);
+      if (error) throw error;
+      showToast(t.emailSent, 'success');
+    } catch (e) { showToast(t.error + ': ' + e.message, 'error'); }
   };
 
-  const handleLogout = async () => { try { await signOut(auth); } catch (e) {} };
+  const handleLogout = async () => { try { await supabase.auth.signOut(); } catch (e) {} };
 
   const handleSavePost = async (post) => {
     try {
       if (post.id) {
-        await updateDoc(doc(db, 'posts', post.id), post);
+        // Update existing post
+        const { error } = await supabase
+          .from('posts')
+          .update({
+            type: post.type,
+            title: post.title,
+            description: post.description,
+            date: post.date,
+            time: post.time,
+            location: post.location,
+            link: post.link,
+            max_participants: post.maxParticipants,
+            trener: post.trener,
+            show_in_news: post.showInNews,
+            is_featured: post.isFeatured,
+            rsvps: post.rsvps || [],
+            completed: post.completed,
+            cancelled: post.cancelled
+          })
+          .eq('id', post.id);
+
+        if (error) throw error;
       } else {
-        await addDoc(collection(db, 'posts'), { ...post, timestamp: new Date(), author: currentUser.email });
+        // Create new post
+        const { error } = await supabase
+          .from('posts')
+          .insert({
+            type: post.type,
+            title: post.title,
+            description: post.description,
+            date: post.date,
+            time: post.time || '23:59',
+            location: post.location,
+            link: post.link,
+            max_participants: post.maxParticipants,
+            trener: post.trener,
+            show_in_news: post.showInNews !== false,
+            is_featured: post.isFeatured || false,
+            rsvps: [],
+            author: currentUser.email,
+            author_id: currentUser.id,
+            timestamp: new Date().toISOString()
+          });
+
+        if (error) throw error;
         if (post.showInNews) sendNotification('Nov dogodek: ' + post.title, post.description?.substring(0, 100) || '');
       }
       setEditingPost(null);
@@ -2663,7 +2811,17 @@ function App() {
     try {
       let successCount = 0;
       for (const event of events) {
-        await addDoc(collection(db, 'posts'), { ...event, timestamp: new Date(), author: currentUser.email });
+        const { error } = await supabase
+          .from('posts')
+          .insert({
+            ...event,
+            timestamp: new Date().toISOString(),
+            author: currentUser.email,
+            author_id: currentUser.id,
+            rsvps: []
+          });
+
+        if (error) throw error;
         successCount++;
       }
       setShowCSVImport(false);
@@ -2674,9 +2832,14 @@ function App() {
 
   const handleDeletePost = async (id) => {
     if (window.confirm(t.deleteConfirm)) {
-      try { 
-        await deleteDoc(doc(db, 'posts', id)); 
-        loadPosts(); 
+      try {
+        const { error } = await supabase
+          .from('posts')
+          .delete()
+          .eq('id', id);
+
+        if (error) throw error;
+        loadPosts();
         showToast(t.deleted || 'Izbrisano', 'success');
       } catch (e) {
         showToast(t.error || 'Napaka', 'error');
@@ -2685,9 +2848,14 @@ function App() {
   };
 
   const changeRole = async (id, role) => {
-    try { 
-      await updateDoc(doc(db, 'members', id), { role }); 
-      loadMembers(); 
+    try {
+      const { error } = await supabase
+        .from('members')
+        .update({ role })
+        .eq('id', id);
+
+      if (error) throw error;
+      loadMembers();
       showToast(t.saved || 'Shranjeno', 'success');
     } catch (e) {
       showToast(t.error || 'Napaka', 'error');
@@ -2701,7 +2869,12 @@ function App() {
       return;
     }
     try {
-      await updateDoc(doc(db, 'members', id), { membershipPaid: !m.membershipPaid });
+      const { error } = await supabase
+        .from('members')
+        .update({ membership_paid: !m.membershipPaid })
+        .eq('id', id);
+
+      if (error) throw error;
       loadMembers();
       showToast(m.membershipPaid ? 'Označeno kot neplačano' : 'Označeno kot plačano', 'success');
     } catch (e) {
@@ -2722,36 +2895,52 @@ function App() {
     }
 
     try {
-      // This will log you out!
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        memberData.email,
-        memberData.password
-      );
+      // Call the Supabase Edge Function to create the member
+      // This runs server-side, so it won't log you out!
+      const { data: session } = await supabase.auth.getSession();
 
-      await setDoc(doc(db, 'members', userCredential.user.uid), {
-        email: memberData.email,
-        ime: memberData.ime,
-        priimek: memberData.priimek,
-        telefon: memberData.telefon || '',
-        morsStevilo: memberData.morsStevilo || '',
-        role: memberData.role || 'user',
-        membershipPaid: false,
-        orozneListine: [],
-        createdAt: new Date(),
-        createdBy: currentUser?.email || 'admin'
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-member`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.session?.access_token}`
+        },
+        body: JSON.stringify({
+          email: memberData.email,
+          password: memberData.password,
+          ime: memberData.ime,
+          priimek: memberData.priimek,
+          telefon: memberData.telefon || '',
+          morsStevilo: memberData.morsStevilo || '',
+          role: memberData.role || 'user'
+        })
       });
 
-      showToast(`Član ustvarjen! Pošljite mu prijavne podatke.`, 'success');
+      const result = await response.json();
 
-      // Reset form
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create member');
+      }
+
+      showToast(`Član ${memberData.ime} ${memberData.priimek} ustvarjen!`, 'success');
+
+      // Reset form and reload members
       setNewMemberData({ email: '', ime: '', priimek: '', telefon: '', morsStevilo: '', role: 'user', password: '' });
       setShowNewMemberForm(false);
 
-      // Will redirect to login since we're logged out
-      setTimeout(() => window.location.reload(), 1500);
+      // Reload members list to show the new member
+      loadMembers();
+
     } catch (error) {
-      showToast('Napaka: ' + error.message, 'error');
+      console.error('Error creating member:', error);
+
+      if (error.message.includes('already exists')) {
+        showToast(`Email ${memberData.email} že obstaja`, 'error');
+      } else if (error.message.includes('Permission denied')) {
+        showToast('Nimate dovoljenja za ustvarjanje članov (samo superadmin)', 'error');
+      } else {
+        showToast('Napaka pri ustvarjanju člana: ' + error.message, 'error');
+      }
     }
   };
 
@@ -2760,28 +2949,29 @@ function App() {
     try {
       showToast('Pripravljam varnostno kopijo...', 'info');
 
-      // Fetch all data
-      const [postsSnap, membersSnap, messagesSnap, featuredSnap] = await Promise.all([
-        getDocs(collection(db, 'posts')),
-        getDocs(collection(db, 'members')),
-        getDocs(collection(db, 'messages')),
-        getDocs(collection(db, 'featured'))
+      // Fetch all data from Supabase
+      const [postsResult, membersResult, messagesResult, settingsResult] = await Promise.all([
+        supabase.from('posts').select('*'),
+        supabase.from('members').select('*'),
+        supabase.from('messages').select('*'),
+        supabase.from('settings').select('*')
       ]);
 
       const backup = {
         exportDate: new Date().toISOString(),
         exportBy: currentUser.email,
-        version: '1.0',
+        version: '2.0',
+        database: 'supabase',
         data: {
-          posts: postsSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-          members: membersSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-          messages: messagesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-          featured: featuredSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+          posts: postsResult.data || [],
+          members: membersResult.data || [],
+          messages: messagesResult.data || [],
+          settings: settingsResult.data || []
         },
         stats: {
-          postsCount: postsSnap.size,
-          membersCount: membersSnap.size,
-          messagesCount: messagesSnap.size
+          postsCount: postsResult.data?.length || 0,
+          membersCount: membersResult.data?.length || 0,
+          messagesCount: messagesResult.data?.length || 0
         }
       };
 
@@ -2804,17 +2994,30 @@ function App() {
 
   const saveProfileData = async () => {
     try {
-      const q = query(collection(db, 'members'), where('email', '==', currentUser.email));
-      const snap = await getDocs(q);
-      if (!snap.empty) { await updateDoc(doc(db, 'members', snap.docs[0].id), profileData); setEditingProfile(false); showToast(t.saved || 'Shranjeno', 'success'); }
+      const { error } = await supabase
+        .from('members')
+        .update({
+          ime: profileData.ime,
+          priimek: profileData.priimek,
+          telefon: profileData.telefon,
+          mors_stevilo: profileData.morsStevilo,
+          orozne_listine: profileData.orozneListine
+        })
+        .eq('user_id', currentUser.id);
+
+      if (error) throw error;
+      setEditingProfile(false);
+      showToast(t.saved || 'Shranjeno', 'success');
     } catch (e) { showToast(t.error || 'Napaka', 'error'); }
   };
 
   const handlePasswordChange = async () => {
     if (!passwordForm.currentPassword || passwordForm.newPassword.length < 7 || passwordForm.newPassword !== passwordForm.confirmPassword) { showToast(t.checkInput || 'Preverite vnos', 'error'); return; }
     try {
-      await reauthenticateWithCredential(currentUser, EmailAuthProvider.credential(currentUser.email, passwordForm.currentPassword));
-      await updatePassword(currentUser, passwordForm.newPassword);
+      const { error } = await supabase.auth.updateUser({
+        password: passwordForm.newPassword
+      });
+      if (error) throw error;
       showToast(t.passwordChanged, 'success');
       setShowPasswordForm(false);
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -2829,14 +3032,41 @@ function App() {
 
   const handleRSVP = async (eventId) => {
     try {
-      const postDoc = await getDoc(doc(db, 'posts', eventId));
-      if (!postDoc.exists()) { showToast(t.eventNotFound || 'Dogodek ne obstaja', 'error'); return; }
-      const postData = postDoc.data();
+      const { data: postData, error: fetchError } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('id', eventId)
+        .single();
+
+      if (fetchError || !postData) {
+        showToast(t.eventNotFound || 'Dogodek ne obstaja', 'error');
+        return;
+      }
+
       const rsvps = postData.rsvps || [];
-      if (rsvps.some(r => r.userId === currentUser.uid)) { showToast(t.alreadySignedUp, 'error'); return; }
-      if (postData.maxParticipants && rsvps.length >= parseInt(postData.maxParticipants)) { showToast(t.eventFull || 'Dogodek je poln', 'error'); return; }
-      const newRsvp = { userId: currentUser.uid, email: currentUser.email, name: profileData.ime && profileData.priimek ? `${profileData.ime} ${profileData.priimek}` : currentUser.email, timestamp: new Date() };
-      await updateDoc(doc(db, 'posts', eventId), { rsvps: [...rsvps, newRsvp] });
+      if (rsvps.some(r => r.userId === currentUser.id)) {
+        showToast(t.alreadySignedUp, 'error');
+        return;
+      }
+      if (postData.max_participants && rsvps.length >= parseInt(postData.max_participants)) {
+        showToast(t.eventFull || 'Dogodek je poln', 'error');
+        return;
+      }
+
+      const newRsvp = {
+        userId: currentUser.id,
+        email: currentUser.email,
+        name: profileData.ime && profileData.priimek ? `${profileData.ime} ${profileData.priimek}` : currentUser.email,
+        timestamp: new Date().toISOString()
+      };
+
+      const { error: updateError } = await supabase
+        .from('posts')
+        .update({ rsvps: [...rsvps, newRsvp] })
+        .eq('id', eventId);
+
+      if (updateError) throw updateError;
+
       loadPosts();
       // Update selected event if open
       if (selectedEvent?.id === eventId) {
@@ -2848,12 +3078,24 @@ function App() {
 
   const cancelRSVP = async (eventId) => {
     try {
-      const postDoc = await getDoc(doc(db, 'posts', eventId));
-      if (!postDoc.exists()) return;
-      const postData = postDoc.data();
+      const { data: postData, error: fetchError } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('id', eventId)
+        .single();
+
+      if (fetchError || !postData) return;
+
       const rsvps = postData.rsvps || [];
-      const updatedRsvps = rsvps.filter(r => r.userId !== currentUser.uid);
-      await updateDoc(doc(db, 'posts', eventId), { rsvps: updatedRsvps });
+      const updatedRsvps = rsvps.filter(r => r.userId !== currentUser.id);
+
+      const { error: updateError } = await supabase
+        .from('posts')
+        .update({ rsvps: updatedRsvps })
+        .eq('id', eventId);
+
+      if (updateError) throw updateError;
+
       loadPosts();
       if (selectedEvent?.id === eventId) {
         setSelectedEvent({ ...selectedEvent, rsvps: updatedRsvps });
@@ -2864,13 +3106,18 @@ function App() {
 
   const handleCompleteTraining = async (eventId, attendance, notes) => {
     try {
-      await updateDoc(doc(db, 'posts', eventId), { 
-        completed: true,
-        completedAt: new Date(),
-        completedBy: currentUser.email,
-        attendance: attendance,
-        trainerNotes: notes
-      });
+      const { error } = await supabase
+        .from('posts')
+        .update({
+          completed: true,
+          completed_at: new Date().toISOString(),
+          completed_by: currentUser.email,
+          attendance: attendance,
+          trainer_notes: notes
+        })
+        .eq('id', eventId);
+
+      if (error) throw error;
       loadPosts();
       showToast(t.trainingCompleted, 'success');
     } catch (e) { showToast((t.error || 'Napaka') + ': ' + e.message, 'error'); }
@@ -2882,13 +3129,18 @@ function App() {
       // Get the event to find RSVPs
       const event = posts.find(p => p.id === eventId);
       const rsvpEmails = event?.rsvps?.map(r => r.email) || [];
-      
-      await updateDoc(doc(db, 'posts', eventId), { 
-        cancelled: true,
-        cancelledAt: new Date(),
-        cancelledBy: currentUser.email,
-        cancelledNotifyEmails: rsvpEmails // Store who needs to be notified
-      });
+
+      const { error } = await supabase
+        .from('posts')
+        .update({
+          cancelled: true,
+          cancelled_at: new Date().toISOString(),
+          cancelled_by: currentUser.email,
+          cancelled_notify_emails: rsvpEmails // Store who needs to be notified
+        })
+        .eq('id', eventId);
+
+      if (error) throw error;
       loadPosts();
       setSelectedEvent(null);
       showToast(t.trainingCancelled, 'success');
@@ -2901,13 +3153,17 @@ function App() {
     if (!messageText) return;
     setIsLoading(true);
     try {
-      await addDoc(collection(db, 'messages'), {
-        text: messageText,
-        authorId: currentUser.uid,
-        author: currentUser.email,
-        authorName: profileData.ime && profileData.priimek ? `${profileData.ime} ${profileData.priimek}` : currentUser.email,
-        timestamp: new Date()
-      });
+      const { error } = await supabase
+        .from('messages')
+        .insert({
+          text: messageText,
+          author_id: currentUser.id,
+          author: currentUser.email,
+          author_name: profileData.ime && profileData.priimek ? `${profileData.ime} ${profileData.priimek}` : currentUser.email,
+          timestamp: new Date().toISOString()
+        });
+
+      if (error) throw error;
       setNewMessage('');
       setShowMentions(false);
     } catch (e) { showToast(t.error || 'Napaka', 'error'); }
@@ -2917,7 +3173,12 @@ function App() {
   const deleteMessage = async (messageId) => {
     if (!window.confirm(t.deleteMessage)) return;
     try {
-      await deleteDoc(doc(db, 'messages', messageId));
+      const { error } = await supabase
+        .from('messages')
+        .delete()
+        .eq('id', messageId);
+
+      if (error) throw error;
       showToast(t.deleted || 'Izbrisano', 'success');
     } catch (e) { showToast((t.error || 'Napaka') + ': ' + e.message, 'error'); }
   };
