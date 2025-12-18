@@ -49,10 +49,8 @@ self.addEventListener('message', (event) => {
 
 // Fetch event - network first with offline fallback
 self.addEventListener('fetch', (event) => {
-  // Always fetch from network for API calls
-  if (event.request.url.includes('firestore') || 
-      event.request.url.includes('firebase') ||
-      event.request.url.includes('googleapis')) {
+  // Always fetch from network for API calls (Supabase)
+  if (event.request.url.includes('supabase')) {
     event.respondWith(
       fetch(event.request).catch(() => {
         // Return empty response for failed API calls (handled by app)
