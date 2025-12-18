@@ -2619,9 +2619,23 @@ function App() {
 
         if (error) throw error;
 
-        setPopups(data || []);
+        // Convert snake_case from database to camelCase for app
+        const formattedData = data?.map(p => ({
+          id: p.id,
+          title: p.title,
+          description: p.description,
+          deadline: p.deadline,
+          buttonText: p.button_text,
+          buttonURL: p.button_url,
+          active: p.active,
+          showDeadline: p.show_deadline,
+          showButton: p.show_button,
+          created_at: p.created_at
+        })) || [];
+
+        setPopups(formattedData);
         // Show active popup to user
-        const active = data?.find(p => p.active && !dismissedPopups.includes(p.id));
+        const active = formattedData?.find(p => p.active && !dismissedPopups.includes(p.id));
         if (active) setActivePopup(active);
       });
     } catch (e) {
@@ -2672,17 +2686,29 @@ function App() {
 
   const handleSavePopup = async (popup) => {
     try {
+      // Convert camelCase to snake_case for database
+      const dbPopup = {
+        title: popup.title,
+        description: popup.description,
+        deadline: popup.deadline,
+        button_text: popup.buttonText,
+        button_url: popup.buttonURL,
+        active: popup.active,
+        show_deadline: popup.showDeadline,
+        show_button: popup.showButton
+      };
+
       if (popup.id) {
         const { error } = await supabase
           .from('popups')
-          .update(popup)
+          .update(dbPopup)
           .eq('id', popup.id);
 
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('popups')
-          .insert({ ...popup, created_at: new Date().toISOString() });
+          .insert({ ...dbPopup, created_at: new Date().toISOString() });
 
         if (error) throw error;
       }

@@ -46,6 +46,16 @@ supabase db push
 - Adds SELECT policy for users to view their own member record (needed for role lookup)
 - Adds policies for admins to manage member records
 
+### 20251218000001_add_popups_settings_rls.sql
+**Purpose:** Add RLS policies for popups and settings tables
+
+**Problem Fixed:** Superadmins cannot create popups or modify settings due to missing RLS policies on these tables.
+
+**Changes:**
+- Enables RLS on `popups` and `settings` tables
+- Adds INSERT/UPDATE/DELETE policies for admins/superadmins on both tables
+- Adds SELECT policy for all authenticated users on both tables
+
 ## Verifying Policies
 
 After applying the migration, verify the policies are working:
