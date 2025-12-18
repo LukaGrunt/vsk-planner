@@ -2973,6 +2973,12 @@ function App() {
 
   // Export backup of all data to JSON file
   const handleExportBackup = async () => {
+    // Permission check: only admins and superadmins can export
+    if (userRole !== 'admin' && userRole !== 'superadmin') {
+      showToast(t.permissionDenied || 'Nimate dovoljenja', 'error');
+      return;
+    }
+
     try {
       showToast('Pripravljam varnostno kopijo...', 'info');
 
@@ -3197,13 +3203,22 @@ function App() {
     finally { setIsLoading(false); }
   };
 
-  const deleteMessage = async (messageId) => {
+  const deleteMessage = async (message) => {
+    // Permission check: only message author or admins can delete
+    const isAuthor = message.author === currentUser?.email;
+    const isAdmin = userRole === 'admin' || userRole === 'superadmin';
+
+    if (!isAuthor && !isAdmin) {
+      showToast(t.permissionDenied || 'Nimate dovoljenja', 'error');
+      return;
+    }
+
     if (!window.confirm(t.deleteMessage)) return;
     try {
       const { error } = await supabase
         .from('messages')
         .delete()
-        .eq('id', messageId);
+        .eq('id', message.id);
 
       if (error) throw error;
       showToast(t.deleted || 'Izbrisano', 'success');
@@ -4349,7 +4364,7 @@ function App() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
                       <span style={{ fontSize: '10px', color: own ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.4)' }}>{m.timestamp?.toDate ? new Date(m.timestamp.toDate()).toLocaleTimeString('sl', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
                       {own && (
-                        <button onClick={() => deleteMessage(m.id)} style={{ background: 'none', border: 'none', padding: '2px 6px', cursor: 'pointer', color: 'rgba(255,255,255,0.5)', fontSize: '10px' }}>
+                        <button onClick={() => deleteMessage(m)} style={{ background: 'none', border: 'none', padding: '2px 6px', cursor: 'pointer', color: 'rgba(255,255,255,0.5)', fontSize: '10px' }}>
                           <Trash2 size={12} />
                         </button>
                       )}
