@@ -15,7 +15,7 @@ The Supabase RLS (Row-Level Security) policy on the `posts` table is blocking IN
 - [x] 5. Applied migration in Supabase dashboard
 - [x] 6. Fixed migration - removed members table RLS (was causing circular dependency)
 - [x] 7. Tested event creation with admin user - WORKS ✓
-- [ ] 8. Commit changes to GitHub
+- [x] 8. Commit and push changes to GitHub ✓
 
 ## Technical Details
 
@@ -126,3 +126,69 @@ USING (user_id = auth.uid());
 - RLS on members table created circular dependency (need role to check role)
 - Solution: Disable RLS on members, enforce security at posts table level
 - This is simpler and avoids complexity
+
+---
+
+# Fix Popup Creation Issue
+
+## Problem
+Superadmin users cannot create popups - getting errors about missing columns in schema cache.
+
+## Root Cause
+Two issues:
+1. **Missing RLS policies** on `popups` and `settings` tables (same as posts issue)
+2. **Missing table columns** - popups table was missing required columns (title, description, button_text, etc.)
+3. **NOT NULL constraints** on unused columns (message, link)
+4. **camelCase/snake_case mismatch** - JavaScript using camelCase but database using snake_case
+
+## Todo List
+- [x] 1. Investigate popup creation code and database schema
+- [x] 2. Create migration to add missing columns to popups table
+- [x] 3. Add RLS policies for popups and settings tables
+- [x] 4. Fix JavaScript code to convert camelCase ↔ snake_case
+- [x] 5. Deploy code changes to Vercel
+- [x] 6. Fix NOT NULL constraints on unused columns
+- [x] 7. Test popup creation - WORKS ✓
+
+## Changes Made
+
+### Database Migration 1: `20251218000001_add_popups_settings_rls.sql`
+**Added:**
+- Missing columns: title, description, deadline, button_text, button_url, active, show_deadline, show_button, created_at
+- RLS policies for popups table (INSERT/UPDATE/DELETE for admins, SELECT for all)
+- RLS policies for settings table (same pattern)
+
+### Database Migration 2: `20251218000002_fix_popups_nullable_columns.sql`
+**Fixed:**
+- Removed NOT NULL constraint from `message` column (unused by app)
+- Removed NOT NULL constraint from `link` column (unused by app)
+
+### Code Changes: `src/App.jsx`
+**Updated `handleSavePopup()`:**
+- Added camelCase → snake_case conversion before saving to database
+- Maps: buttonText → button_text, buttonURL → button_url, etc.
+
+**Updated `loadPopups()`:**
+- Added snake_case → camelCase conversion when loading from database
+- Maps: button_text → buttonText, button_url → buttonURL, etc.
+
+## Result
+✅ Popup creation now works for superadmin users
+✅ All popup fields properly saved to database
+✅ RLS policies enforce admin/superadmin only access
+✅ Deployed to production (Vercel)
+
+---
+
+# Feature Documentation Created
+
+## Created: `tasks/FEATURES.md`
+Comprehensive documentation of all app capabilities:
+- 50+ features documented
+- Organized by system/category
+- Technical architecture notes
+- Future enhancement ideas
+- Migration history
+- Current limitations
+
+This serves as the master reference for planning improvements and understanding the complete scope of the VSK Planner application.
