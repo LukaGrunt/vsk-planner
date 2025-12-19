@@ -2759,7 +2759,7 @@ function App() {
       setLoginAnimation(false);
       // Better error messages
       const errorMsg = e.message.includes('Invalid login credentials') ? (language === 'en' ? 'Invalid email or password' : 'Napačen email ali geslo') :
-                       e.message.includes('too many') ? (language === 'en' ? 'Too many attempts. Try again later.' : 'Preveč poskusov. Poskusite kasneje.') :
+                       e.message.includes('too many') ? (language === 'en' ? 'Too many attempts. Try again later.' : 'Preveč poskusov. Poskusite kasnije.') :
                        e.message.includes('network') ? (language === 'en' ? 'Network error. Check your connection.' : 'Napaka omrežja. Preverite povezavo.') :
                        (t.error || 'Napaka') + ': ' + e.message;
       showToast(errorMsg, 'error');
