@@ -2258,6 +2258,30 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Keep session alive - refresh token periodically
+  useEffect(() => {
+    if (!currentUser) return;
+
+    // Check and refresh session every 30 minutes
+    const sessionRefreshInterval = setInterval(async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error('Session refresh error:', error);
+          return;
+        }
+        // If session exists, Supabase will auto-refresh if needed
+        if (session) {
+          await supabase.auth.setSession(session);
+        }
+      } catch (error) {
+        console.error('Failed to refresh session:', error);
+      }
+    }, 30 * 60 * 1000); // 30 minutes
+
+    return () => clearInterval(sessionRefreshInterval);
+  }, [currentUser]);
+
   // Helper function to load user profile from Supabase
   const loadUserProfile = async (user) => {
     try {
