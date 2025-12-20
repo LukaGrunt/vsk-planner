@@ -1106,9 +1106,22 @@ const CSVImportModal = ({ onClose, onImport, t }) => {
       const event = {};
       headers.forEach((header, index) => { event[header] = values[index] || ''; });
       const typeMap = { 'trening': 'training', 'training': 'training', 'tekma': 'competition', 'competition': 'competition', 'obvestilo': 'announcement', 'announcement': 'announcement', 'plačilo': 'payment', 'placilo': 'payment', 'payment': 'payment' };
+
+      // Convert date from DD/MM/YYYY to YYYY-MM-DD
+      let formattedDate = '';
+      if (event.datum) {
+        const parts = event.datum.split('/');
+        if (parts.length === 3) {
+          const day = parts[0].padStart(2, '0');
+          const month = parts[1].padStart(2, '0');
+          const year = parts[2];
+          formattedDate = `${year}-${month}-${day}`;
+        }
+      }
+
       const mappedEvent = {
         type: typeMap[event.tip?.toLowerCase()] || 'training', title: event.naslov || '', description: event.opis || '',
-        date: event.datum || '', time: event.cas || event.čas || '', location: event.lokacija || '',
+        date: formattedDate, time: event.cas || event.čas || '', location: event.lokacija || '',
         trainer: event.vodja || event.trener || '', trainerContact: event.kontakt || '', maxParticipants: event.maks || event.max || '',
         showInNews: false, rsvps: []
       };
