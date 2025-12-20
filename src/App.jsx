@@ -2493,11 +2493,20 @@ function App() {
 
         if (error) throw error;
 
+        // Transform snake_case database columns to camelCase for app
+        const transformedData = data.map(post => ({
+          ...post,
+          maxParticipants: post.max_participants,
+          showInNews: post.show_in_news,
+          isFeatured: post.is_featured,
+          trainer: post.trener
+        }));
+
         // Check if there are more posts
-        setHasMorePosts(data.length === POSTS_PER_PAGE + 1);
+        setHasMorePosts(transformedData.length === POSTS_PER_PAGE + 1);
 
         // Remove the extra document if it exists
-        const posts = data.length === POSTS_PER_PAGE + 1 ? data.slice(0, POSTS_PER_PAGE) : data;
+        const posts = transformedData.length === POSTS_PER_PAGE + 1 ? transformedData.slice(0, POSTS_PER_PAGE) : transformedData;
         setPosts(posts);
 
         // Store last document for pagination
@@ -2525,12 +2534,21 @@ function App() {
 
         if (error) throw error;
 
+        // Transform snake_case database columns to camelCase for app
+        const transformedData = data.map(post => ({
+          ...post,
+          maxParticipants: post.max_participants,
+          showInNews: post.show_in_news,
+          isFeatured: post.is_featured,
+          trainer: post.trener
+        }));
+
         // Check if there are more posts
-        const hasMore = data.length === POSTS_PER_PAGE + 1;
+        const hasMore = transformedData.length === POSTS_PER_PAGE + 1;
         setHasMorePosts(hasMore);
 
         // Remove the extra document if it exists
-        const newPosts = hasMore ? data.slice(0, POSTS_PER_PAGE) : data;
+        const newPosts = hasMore ? transformedData.slice(0, POSTS_PER_PAGE) : transformedData;
         setPosts(prev => [...prev, ...newPosts]);
 
         // Store last document for next pagination
