@@ -2238,7 +2238,15 @@ function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
         setCurrentUser(session.user);
-        await loadUserProfile(session.user);
+        try {
+          await loadUserProfile(session.user);
+        } catch (error) {
+          // If profile loading fails, still allow user to access the app
+          console.error('Failed to load user profile:', error);
+          setUserRole('user');
+          setView('news');
+          setLoading(false);
+        }
       } else {
         setCurrentUser(null);
         setUserRole(null);
@@ -2482,6 +2490,15 @@ function App() {
     }
   };
 
+  // Helper function to transform database post to app format
+  const transformPost = (post) => ({
+    ...post,
+    maxParticipants: post.max_participants,
+    showInNews: post.show_in_news,
+    isFeatured: post.is_featured,
+    trainer: post.trener
+  });
+
   const loadPosts = async () => {
     try {
       await withRetry(async () => {
@@ -2494,13 +2511,7 @@ function App() {
         if (error) throw error;
 
         // Transform snake_case database columns to camelCase for app
-        const transformedData = data.map(post => ({
-          ...post,
-          maxParticipants: post.max_participants,
-          showInNews: post.show_in_news,
-          isFeatured: post.is_featured,
-          trainer: post.trener
-        }));
+        const transformedData = data.map(transformPost);
 
         // Check if there are more posts
         setHasMorePosts(transformedData.length === POSTS_PER_PAGE + 1);
@@ -2535,13 +2546,7 @@ function App() {
         if (error) throw error;
 
         // Transform snake_case database columns to camelCase for app
-        const transformedData = data.map(post => ({
-          ...post,
-          maxParticipants: post.max_participants,
-          showInNews: post.show_in_news,
-          isFeatured: post.is_featured,
-          trainer: post.trener
-        }));
+        const transformedData = data.map(transformPost);
 
         // Check if there are more posts
         const hasMore = transformedData.length === POSTS_PER_PAGE + 1;
@@ -2807,7 +2812,14 @@ function App() {
     } catch (e) { showToast(t.error + ': ' + e.message, 'error'); }
   };
 
-  const handleLogout = async () => { try { await supabase.auth.signOut(); } catch (e) {} };
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      showToast((language === 'en' ? 'Logout failed. Please try again.' : 'Odjava ni uspela. Prosimo poskusite ponovno.'), 'error');
+      console.error('Logout error:', e);
+    }
+  };
 
   const handleSavePost = async (post) => {
     try {
@@ -3118,12 +3130,16 @@ function App() {
         return;
       }
 
-      const rsvps = postData.rsvps || [];
+      // Transform database format to app format
+      const post = transformPost(postData);
+
+      const rsvps = post.rsvps || [];
       if (rsvps.some(r => r.userId === currentUser.id)) {
         showToast(t.alreadySignedUp, 'error');
         return;
       }
-      if (postData.max_participants && rsvps.length >= parseInt(postData.max_participants)) {
+      // Check max participants with proper null/undefined handling
+      if (post.maxParticipants && rsvps.length >= parseInt(post.maxParticipants)) {
         showToast(t.eventFull || 'Dogodek je poln', 'error');
         return;
       }
