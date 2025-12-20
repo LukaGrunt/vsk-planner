@@ -30,12 +30,9 @@ self.addEventListener('activate', (event) => {
       );
     }).then(() => {
       // Force all clients to use new service worker
+      // NOTE: Don't send CACHE_UPDATED message - let users refresh naturally
+      // This prevents force-reloads during app usage
       return self.clients.claim();
-    }).then(() => {
-      // Notify all clients to refresh
-      return self.clients.matchAll().then(clients => {
-        clients.forEach(client => client.postMessage({ type: 'CACHE_UPDATED' }));
-      });
     })
   );
 });
@@ -71,9 +68,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   
-  // For other requests - network first, cache fallback
+  // For other requests - network first with timeout, cache fallback
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Network timeout')), 8000)
+  );
+
   event.respondWith(
-    fetch(event.request)
+    Promise.race([fetch(event.request), timeoutPromise])
       .then((response) => {
         const responseClone = response.clone();
         caches.open(CACHE_NAME)
@@ -84,7 +85,7 @@ self.addEventListener('fetch', (event) => {
           });
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => caches.match(event.request)) // Fallback on timeout OR network error
   );
 });
 

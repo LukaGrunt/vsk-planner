@@ -2248,23 +2248,34 @@ function App() {
     return () => clearTimeout(timeout);
   }, [loading, connectionStatus]);
 
-  // Check Supabase connection on mount
+  // Initialize authentication (consolidated to prevent race conditions)
   useEffect(() => {
-    const checkConnection = async () => {
+    const initializeAuth = async () => {
       try {
         setConnectionStatus('connecting');
-        // Quick health check - try to get session
-        const { error } = await supabase.auth.getSession();
+
+        const { data: { session }, error } = await supabase.auth.getSession();
+
         if (error) {
           throw error;
         }
+
         setConnectionStatus('connected');
+
+        if (session?.user) {
+          setCurrentUser(session.user);
+          await loadUserProfile(session.user);
+        } else {
+          setCurrentUser(null);
+          setUserRole(null);
+          setView('home');
+          setLoading(false);
+        }
       } catch (error) {
-        console.error('Supabase connection error:', error);
-        // Log to Sentry
+        console.error('Session initialization error:', error);
         Sentry.captureException(error, {
           tags: {
-            error_type: 'supabase_connection',
+            error_type: 'session_init',
             domain: window.location.hostname
           },
           extra: {
@@ -2278,22 +2289,8 @@ function App() {
         setLoading(false);
       }
     };
-    checkConnection();
-  }, []);
 
-  useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setCurrentUser(session.user);
-        loadUserProfile(session.user);
-      } else {
-        setCurrentUser(null);
-        setUserRole(null);
-        setView('home');
-        setLoading(false);
-      }
-    });
+    initializeAuth();
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -2345,50 +2342,64 @@ function App() {
 
   // Helper function to load user profile from Supabase
   const loadUserProfile = async (user) => {
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Profile load timeout')), 10000)
+    );
+
     try {
-      const { data, error } = await supabase
-        .from('members')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
+      await Promise.race([
+        (async () => {
+          const { data, error } = await supabase
+            .from('members')
+            .select('*')
+            .eq('user_id', user.id)
+            .single();
 
-      if (error) throw error;
+          if (error) throw error;
 
-      if (data) {
-        setUserRole(data.role || 'user');
-        setView(data.role === 'admin' || data.role === 'superadmin' ? 'admin-dashboard' : 'news');
+          if (data) {
+            setUserRole(data.role || 'user');
+            setView(data.role === 'admin' || data.role === 'superadmin' ? 'admin-dashboard' : 'news');
 
-        // Track login
-        try {
-          if (!data.has_logged_in) {
-            await supabase
-              .from('members')
-              .update({
-                has_logged_in: true,
-                first_login_at: new Date().toISOString(),
-                last_login_at: new Date().toISOString()
-              })
-              .eq('user_id', user.id);
+            // Track login
+            try {
+              if (!data.has_logged_in) {
+                await supabase
+                  .from('members')
+                  .update({
+                    has_logged_in: true,
+                    first_login_at: new Date().toISOString(),
+                    last_login_at: new Date().toISOString()
+                  })
+                  .eq('user_id', user.id);
+              } else {
+                await supabase
+                  .from('members')
+                  .update({ last_login_at: new Date().toISOString() })
+                  .eq('user_id', user.id);
+              }
+            } catch (updateError) {
+              // Login tracking failed but don't reset user role
+            }
           } else {
-            await supabase
-              .from('members')
-              .update({ last_login_at: new Date().toISOString() })
-              .eq('user_id', user.id);
+            setUserRole('user');
+            setView('news');
           }
-        } catch (updateError) {
-          // Login tracking failed but don't reset user role
-        }
-      } else {
-        setUserRole('user');
-        setView('news');
-      }
+        })(),
+        timeoutPromise
+      ]);
+
       requestNotificationPermission().then(setNotificationsEnabled);
     } catch (e) {
       console.error('Error loading profile:', e);
+      Sentry.captureException(e, {
+        tags: { error_type: 'profile_load_timeout' }
+      });
       setUserRole('user');
       setView('news');
+    } finally {
+      setLoading(false); // ALWAYS set loading to false
     }
-    setLoading(false);
   };
 
   useEffect(() => { loadPosts(); }, []);
@@ -2424,9 +2435,15 @@ function App() {
   // Check for cancelled trainings that user was signed up for
   useEffect(() => {
     if (!currentUser || !posts.length) return;
-    
+
     // Get list of already seen cancelled trainings from localStorage
-    const seenCancelled = JSON.parse(localStorage.getItem('vsk-seen-cancelled') || '[]');
+    let seenCancelled = [];
+    try {
+      seenCancelled = JSON.parse(localStorage.getItem('vsk-seen-cancelled') || '[]');
+    } catch (e) {
+      console.error('Corrupted vsk-seen-cancelled, clearing:', e);
+      localStorage.removeItem('vsk-seen-cancelled');
+    }
     
     // Find cancelled trainings where user was signed up and hasn't been notified
     const cancelledForUser = posts.find(p => 
@@ -2441,8 +2458,20 @@ function App() {
   }, [posts, currentUser]);
 
   const dismissCancelledAlert = (postId) => {
-    const seenCancelled = JSON.parse(localStorage.getItem('vsk-seen-cancelled') || '[]');
-    localStorage.setItem('vsk-seen-cancelled', JSON.stringify([...seenCancelled, postId]));
+    let seenCancelled = [];
+    try {
+      seenCancelled = JSON.parse(localStorage.getItem('vsk-seen-cancelled') || '[]');
+    } catch (e) {
+      console.error('Corrupted vsk-seen-cancelled, clearing:', e);
+      localStorage.removeItem('vsk-seen-cancelled');
+    }
+
+    try {
+      localStorage.setItem('vsk-seen-cancelled', JSON.stringify([...seenCancelled, postId]));
+    } catch (e) {
+      console.error('Failed to save vsk-seen-cancelled:', e);
+    }
+
     setCancelledTrainingAlert(null);
   };
 
@@ -3526,6 +3555,36 @@ function App() {
             }}
           >
             {language === 'en' ? 'Retry' : 'Poskusi ponovno'}
+          </button>
+          <button
+            onClick={async () => {
+              // Clear service worker cache
+              if ('caches' in window) {
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(name => caches.delete(name)));
+              }
+              // Clear localStorage (except remembered email)
+              const rememberedEmail = localStorage.getItem('vsk-remembered-email');
+              localStorage.clear();
+              if (rememberedEmail) {
+                localStorage.setItem('vsk-remembered-email', rememberedEmail);
+              }
+              // Reload
+              window.location.reload();
+            }}
+            style={{
+              background: 'transparent',
+              color: '#888',
+              padding: '10px 24px',
+              borderRadius: '8px',
+              border: '1px solid #444',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer',
+              marginTop: '8px'
+            }}
+          >
+            {language === 'en' ? 'Force Refresh (Clear Cache)' : 'Prisilna osvežitev (Počisti predpomnilnik)'}
           </button>
           <div style={{ color: '#666', fontSize: '12px', marginTop: '20px', textAlign: 'center' }}>
             Status: {connectionStatus}
