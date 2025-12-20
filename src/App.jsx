@@ -2838,15 +2838,26 @@ function App() {
     try {
       let successCount = 0;
       for (const event of events) {
+        // Convert camelCase to snake_case for database
+        const dbEvent = {
+          type: event.type,
+          title: event.title,
+          description: event.description,
+          date: event.date,
+          time: event.time,
+          location: event.location,
+          trener: event.trainer,
+          max_participants: event.maxParticipants || null,
+          show_in_news: event.showInNews || false,
+          timestamp: new Date().toISOString(),
+          author: currentUser.email,
+          author_id: currentUser.id,
+          rsvps: []
+        };
+
         const { error } = await supabase
           .from('posts')
-          .insert({
-            ...event,
-            timestamp: new Date().toISOString(),
-            author: currentUser.email,
-            author_id: currentUser.id,
-            rsvps: []
-          });
+          .insert(dbEvent);
 
         if (error) throw error;
         successCount++;
