@@ -1610,6 +1610,8 @@ function App() {
   const [dismissedPopups, setDismissedPopups] = useState([]);
   const [statsTab, setStatsTab] = useState('attendance');
   const [showSplash, setShowSplash] = useState(true);
+  const [loadingError, setLoadingError] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState('connecting');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [featuredArticle, setFeaturedArticle] = useState(null);
   const [editingFeatured, setEditingFeatured] = useState(null);
@@ -2218,6 +2220,65 @@ function App() {
 
   useEffect(() => {
     if ('Notification' in window) setNotificationsEnabled(Notification.permission === 'granted');
+  }, []);
+
+  // Loading timeout - prevent infinite loading
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (loading) {
+        console.error('Loading timeout - app took too long to load');
+        // Log to Sentry
+        Sentry.captureMessage('App loading timeout', {
+          level: 'error',
+          tags: {
+            error_type: 'loading_timeout',
+            domain: window.location.hostname
+          },
+          extra: {
+            connectionStatus,
+            userAgent: navigator.userAgent,
+            url: window.location.href
+          }
+        });
+        setLoadingError('timeout');
+        setLoading(false);
+      }
+    }, 15000); // 15 second timeout
+
+    return () => clearTimeout(timeout);
+  }, [loading, connectionStatus]);
+
+  // Check Supabase connection on mount
+  useEffect(() => {
+    const checkConnection = async () => {
+      try {
+        setConnectionStatus('connecting');
+        // Quick health check - try to get session
+        const { error } = await supabase.auth.getSession();
+        if (error) {
+          throw error;
+        }
+        setConnectionStatus('connected');
+      } catch (error) {
+        console.error('Supabase connection error:', error);
+        // Log to Sentry
+        Sentry.captureException(error, {
+          tags: {
+            error_type: 'supabase_connection',
+            domain: window.location.hostname
+          },
+          extra: {
+            supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
+            userAgent: navigator.userAgent,
+            url: window.location.href
+          }
+        });
+        setConnectionStatus('error');
+        setLoadingError('connection');
+        setLoading(false);
+      }
+    };
+    checkConnection();
   }, []);
 
   useEffect(() => {
@@ -3400,9 +3461,92 @@ function App() {
     );
   }
 
-  if (loading) return (
-    <div style={{ minHeight: '100vh', background: '#0a0b0c', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: '40px', height: '40px', border: '3px solid #c1372a', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+  // Loading or error screen
+  if (loading || loadingError) return (
+    <div style={{
+      minHeight: '100vh',
+      background: '#0a0b0c',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '20px'
+    }}>
+      {loadingError ? (
+        <>
+          <div style={{
+            fontSize: '48px',
+            marginBottom: '20px'
+          }}>⚠️</div>
+          <h2 style={{
+            color: '#fff',
+            fontSize: '20px',
+            fontWeight: '600',
+            marginBottom: '10px',
+            textAlign: 'center'
+          }}>
+            {loadingError === 'timeout' ? (language === 'en' ? 'Loading Timeout' : 'Časovna omejitev nalaganja') :
+             loadingError === 'connection' ? (language === 'en' ? 'Connection Error' : 'Napaka povezave') :
+             (language === 'en' ? 'Error Loading App' : 'Napaka pri nalaganju')}
+          </h2>
+          <p style={{
+            color: '#888',
+            fontSize: '14px',
+            marginBottom: '30px',
+            textAlign: 'center',
+            maxWidth: '400px'
+          }}>
+            {loadingError === 'timeout' ?
+              (language === 'en' ? 'The app is taking longer than expected to load. Please check your internet connection and try again.' :
+               'Aplikacija se nalaga dlje kot običajno. Preverite internetno povezavo in poskusite ponovno.') :
+             loadingError === 'connection' ?
+              (language === 'en' ? 'Unable to connect to the server. Please check your internet connection.' :
+               'Ni mogoče vzpostaviti povezave s strežnikom. Preverite internetno povezavo.') :
+              (language === 'en' ? 'Something went wrong while loading the app.' :
+               'Pri nalaganju aplikacije je prišlo do napake.')}
+          </p>
+          <button
+            onClick={() => {
+              setLoadingError(null);
+              setLoading(true);
+              setConnectionStatus('connecting');
+              window.location.reload();
+            }}
+            style={{
+              background: 'linear-gradient(135deg, #c1372a 0%, #9a2c22 100%)',
+              color: '#fff',
+              padding: '14px 32px',
+              borderRadius: '12px',
+              border: 'none',
+              fontSize: '16px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              boxShadow: '0 4px 20px rgba(193, 55, 42, 0.4)',
+              marginBottom: '12px'
+            }}
+          >
+            {language === 'en' ? 'Retry' : 'Poskusi ponovno'}
+          </button>
+          <div style={{ color: '#666', fontSize: '12px', marginTop: '20px', textAlign: 'center' }}>
+            Status: {connectionStatus}
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '3px solid #c1372a',
+            borderTopColor: 'transparent',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            marginBottom: '20px'
+          }} />
+          <p style={{ color: '#888', fontSize: '14px' }}>
+            {language === 'en' ? 'Loading...' : 'Nalaganje...'}
+          </p>
+        </>
+      )}
     </div>
   );
 
