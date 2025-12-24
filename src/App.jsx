@@ -158,8 +158,7 @@ class ErrorBoundary extends React.Component {
 const EVENT_COLORS = {
   training: { bg: '#c1372a', text: '#fff', label: 'Trening', icon: Target, calendarColor: '#c1372a' },
   competition: { bg: '#f59e0b', text: '#fff', label: 'Tekma', icon: Trophy, calendarColor: '#f59e0b' },
-  announcement: { bg: '#3b82f6', text: '#fff', label: 'Obvestilo', icon: Volume2, calendarColor: '#3b82f6' },
-  payment: { bg: '#10b981', text: '#fff', label: 'Plačilo', icon: FileText, calendarColor: '#10b981' }
+  news: { bg: '#3b82f6', text: '#fff', label: 'Novica', icon: FileText, calendarColor: null }
 };
 
 // Pagination constants
@@ -547,19 +546,6 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
             </div>
           )}
 
-          {post.type === 'payment' && post.amount && (
-            <div style={{
-              background: 'rgba(16, 185, 129, 0.2)',
-              border: '1px solid rgba(16, 185, 129, 0.3)',
-              borderRadius: '12px',
-              padding: '14px',
-              marginBottom: '12px',
-              textAlign: 'center'
-            }}>
-              <span style={{ color: '#10b981', fontSize: '24px', fontWeight: '700' }}>{post.amount} €</span>
-            </div>
-          )}
-
           {(post.type === 'training' || post.type === 'competition') && post.trainer && (
             <div style={{
               ...glassCardStyle,
@@ -913,19 +899,21 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
 const PostForm = ({ post, onSave, onCancel, members, t }) => {
   const [formData, setFormData] = useState(() => {
     if (post && post.id) return post;
-    const defaultType = post?.type || 'training';
-    const showInNewsDefault = defaultType === 'announcement' || defaultType === 'payment';
     return {
-      title: '', description: '', type: defaultType, date: '', time: '', location: '',
-      showInNews: showInNewsDefault, amount: '', maxParticipants: '', trainer: '',
+      title: '', description: '', type: 'training', date: '', time: '', location: '',
+      showInNews: false, maxParticipants: null, trainer: null,
       trainerContact: '', rsvps: [], linkURL: '', linkText: '', hasLink: false,
       ...post
     };
   });
 
   const handleTypeChange = (newType) => {
-    const showInNewsDefault = newType === 'announcement' || newType === 'payment';
-    setFormData({ ...formData, type: newType, showInNews: showInNewsDefault });
+    // Auto-enable showInNews for news type
+    const updates = { type: newType };
+    if (newType === 'news') {
+      updates.showInNews = true;
+    }
+    setFormData({ ...formData, ...updates });
   };
 
   return (
@@ -957,8 +945,7 @@ const PostForm = ({ post, onSave, onCancel, members, t }) => {
             }}>
               <option value="training">{t.training}</option>
               <option value="competition">{t.match}</option>
-              <option value="announcement">{t.announcement}</option>
-              <option value="payment">{t.payment}</option>
+              <option value="news">{t.news}</option>
             </select>
           </div>
 
@@ -976,29 +963,20 @@ const PostForm = ({ post, onSave, onCancel, members, t }) => {
               style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', minHeight: '80px', resize: 'vertical', boxSizing: 'border-box' }} />
           </div>
 
-          {/* Payment amount */}
-          {formData.type === 'payment' && (
-            <div>
-              <label style={{ display: 'block', color: '#888', fontSize: '12px', marginBottom: '6px' }}>{t.amount}</label>
-              <input type="text" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} placeholder="€50"
-                style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }} />
-            </div>
-          )}
-
           {/* Training/Competition fields */}
           {(formData.type === 'training' || formData.type === 'competition') && (
             <>
               <div>
                 <label style={{ display: 'block', color: '#888', fontSize: '12px', marginBottom: '6px' }}>{t.maxParticipants}</label>
-                <input type="number" value={formData.maxParticipants} onChange={(e) => setFormData({ ...formData, maxParticipants: e.target.value })} placeholder="8"
+                <input type="number" value={formData.maxParticipants || ''} onChange={(e) => setFormData({ ...formData, maxParticipants: e.target.value || null })} placeholder="8"
                   style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }} />
               </div>
               <div style={{ ...glassCardStyle, padding: '14px' }}>
                 <label style={{ display: 'block', color: '#c1372a', fontSize: '12px', marginBottom: '10px', fontWeight: '600' }}>👤 {t.leaderTrainer}</label>
                 <div style={{ display: 'grid', gap: '10px' }}>
-                  <select value={formData.trainer} onChange={(e) => {
+                  <select value={formData.trainer || ''} onChange={(e) => {
                     const selectedMember = members?.find(m => `${m.ime} ${m.priimek}` === e.target.value);
-                    setFormData({ ...formData, trainer: e.target.value, trainerContact: selectedMember?.telefon || '' });
+                    setFormData({ ...formData, trainer: e.target.value || null, trainerContact: selectedMember?.telefon || '' });
                   }} style={{ width: '100%', padding: '10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '13px' }}>
                     <option value="">{t.selectLeader}</option>
                     {members?.map((member, index) => (
@@ -1012,26 +990,30 @@ const PostForm = ({ post, onSave, onCancel, members, t }) => {
             </>
           )}
 
-          {/* Date & Time */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <div>
-              <label style={{ display: 'block', color: '#888', fontSize: '12px', marginBottom: '6px' }}>{t.date}</label>
-              <input type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box', colorScheme: 'dark' }} />
+          {/* Date & Time - Hide for news */}
+          {formData.type !== 'news' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div>
+                <label style={{ display: 'block', color: '#888', fontSize: '12px', marginBottom: '6px' }}>{t.date}</label>
+                <input type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box', colorScheme: 'dark' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', color: '#888', fontSize: '12px', marginBottom: '6px' }}>{t.time}</label>
+                <input type="time" value={formData.time} onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+                  style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box', colorScheme: 'dark' }} />
+              </div>
             </div>
-            <div>
-              <label style={{ display: 'block', color: '#888', fontSize: '12px', marginBottom: '6px' }}>{t.time}</label>
-              <input type="time" value={formData.time} onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box', colorScheme: 'dark' }} />
-            </div>
-          </div>
+          )}
 
-          {/* Location */}
-          <div>
-            <label style={{ display: 'block', color: '#888', fontSize: '12px', marginBottom: '6px' }}>{t.location}</label>
-            <input type="text" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-              style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }} />
-          </div>
+          {/* Location - Hide for news */}
+          {formData.type !== 'news' && (
+            <div>
+              <label style={{ display: 'block', color: '#888', fontSize: '12px', marginBottom: '6px' }}>{t.location}</label>
+              <input type="text" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }} />
+            </div>
+          )}
 
           {/* Link toggle and fields */}
           <div style={{ ...glassCardStyle, padding: '14px' }}>
@@ -1063,12 +1045,17 @@ const PostForm = ({ post, onSave, onCancel, members, t }) => {
           {/* Show in news toggle */}
           <div style={{ ...glassCardStyle, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input type="checkbox" checked={formData.showInNews} onChange={(e) => setFormData({ ...formData, showInNews: e.target.checked })}
-                style={{ width: '18px', height: '18px', accentColor: '#c1372a' }} />
+              <input
+                type="checkbox"
+                checked={formData.showInNews}
+                onChange={(e) => setFormData({ ...formData, showInNews: e.target.checked })}
+                disabled={formData.type === 'news'}
+                style={{ width: '18px', height: '18px', accentColor: '#c1372a', opacity: formData.type === 'news' ? 0.5 : 1 }}
+              />
               <label style={{ color: '#fff', fontSize: '13px' }}>{t.showInNews}</label>
             </div>
             <span style={{ color: '#888', fontSize: '11px' }}>
-              {formData.type === 'training' || formData.type === 'competition' ? t.defaultOff : t.defaultOn}
+              {formData.type === 'news' ? '(Vedno prikazano)' : (t.defaultOff || 'Default OFF')}
             </span>
           </div>
 
@@ -1105,7 +1092,7 @@ const CSVImportModal = ({ onClose, onImport, t }) => {
       const values = lines[i].split(',').map(v => v.trim());
       const event = {};
       headers.forEach((header, index) => { event[header] = values[index] || ''; });
-      const typeMap = { 'trening': 'training', 'training': 'training', 'tekma': 'competition', 'competition': 'competition', 'obvestilo': 'announcement', 'announcement': 'announcement', 'plačilo': 'payment', 'placilo': 'payment', 'payment': 'payment' };
+      const typeMap = { 'trening': 'training', 'training': 'training', 'tekma': 'competition', 'competition': 'competition' };
 
       // Convert date from DD/MM/YYYY to YYYY-MM-DD
       let formattedDate = '';
@@ -1122,7 +1109,7 @@ const CSVImportModal = ({ onClose, onImport, t }) => {
       const mappedEvent = {
         type: typeMap[event.tip?.toLowerCase()] || 'training', title: event.naslov || '', description: event.opis || '',
         date: formattedDate, time: event.cas || event.čas || '', location: event.lokacija || '',
-        trainer: event.vodja || event.trener || '', trainerContact: event.kontakt || '', maxParticipants: event.maks || event.max || '',
+        trainer: event.vodja || event.trener || null, trainerContact: event.kontakt || '', maxParticipants: event.maks || event.max || null,
         showInNews: false, rsvps: []
       };
       if (mappedEvent.title && mappedEvent.date) events.push(mappedEvent);
@@ -1465,7 +1452,6 @@ const SlimEventCard = ({ post, onShowDetail }) => {
   const IconComponent = eventConfig.icon;
   const currentRSVPs = post.rsvps || [];
   const isFull = post.maxParticipants && currentRSVPs.length >= parseInt(post.maxParticipants);
-  const showTitle = post.type === 'announcement' || post.type === 'payment';
 
   const formatDate = (dateStr) => {
     if (!dateStr) return '';
@@ -1506,22 +1492,15 @@ const SlimEventCard = ({ post, onShowDetail }) => {
             <IconComponent size={12} />
             {eventConfig.label}
           </span>
-          {showTitle && (
-            <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: '14px', fontWeight: '500', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {post.title}
-            </span>
-          )}
-          {!showTitle && post.date && (
+          {post.date && (
             <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: '14px', fontWeight: '500' }}>{formatDate(post.date)}</span>
           )}
-          {!showTitle && post.time && (
+          {post.time && (
             <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px' }}>{post.time}</span>
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
           {post.linkURL && <Link size={14} color="#3b82f6" />}
-          {showTitle && post.date && <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>{formatDate(post.date)}</span>}
-          {showTitle && post.time && <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>{post.time}</span>}
           <ChevronRight size={16} color="rgba(255,255,255,0.4)" />
         </div>
       </div>
@@ -1601,6 +1580,8 @@ function App() {
   const [mentionSuggestions, setMentionSuggestions] = useState([]);
   const [showMentions, setShowMentions] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [debugResult, setDebugResult] = useState(null);
+  const [debugLoading, setDebugLoading] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [loginAnimation, setLoginAnimation] = useState(false);
@@ -1713,8 +1694,8 @@ function App() {
       // Events
       training: 'Trening',
       match: 'Tekma',
-      announcement: 'Obvestilo',
-      payment: 'Plačilo',
+      newsPlural: 'Novice',
+      createNews: 'Ustvari novico',
       signUp: 'Prijavi se',
       signOff: 'Odjavi se',
       signedUp: 'Prijavljen',
@@ -1955,8 +1936,8 @@ function App() {
       // Events
       training: 'Training',
       match: 'Match',
-      announcement: 'Announcement',
-      payment: 'Payment',
+      newsPlural: 'News',
+      createNews: 'Create news',
       signUp: 'Sign up',
       signOff: 'Sign off',
       signedUp: 'Signed up',
@@ -2849,6 +2830,52 @@ function App() {
       };
 
       if (popup.id) {
+
+  // Format Supabase error for display
+  const formatSupabaseError = (err) => {
+    if (!err) return '';
+    if (typeof err === 'string') return err;
+    const parts = [];
+    if (err.message) parts.push(err.message);
+    if (err.details) parts.push(err.details);
+    if (err.hint) parts.push('Hint: ' + err.hint);
+    if (err.code) parts.push('Code: ' + err.code);
+    if (err.status) parts.push('Status: ' + err.status);
+    return parts.join(' | ');
+  };
+
+  // Admin debug helper: try inserting a minimal post and show full error/result
+  const handleTestInsert = async (type) => {
+    setDebugLoading(true);
+    setDebugResult(null);
+    try {
+      const insertData = {
+        type,
+        title: `DEBUG ${type} ${new Date().toISOString()}`,
+        description: 'Inserted by debug panel',
+        date: new Date().toISOString().split('T')[0],
+        time: '12:00',
+        show_in_news: false,
+        author: currentUser?.email || 'debug@example.com',
+        author_id: currentUser?.id || null,
+        timestamp: new Date().toISOString()
+      };
+      if (type === 'payment') insertData.amount = 1.0;
+
+      console.log('DEBUG INSERT DATA:', insertData);
+      const { data, error } = await supabase.from('posts').insert(insertData).select();
+      if (error) {
+        console.error('DEBUG INSERT ERROR:', error);
+        setDebugResult({ success: false, error: formatSupabaseError(error), raw: error });
+      } else {
+        console.log('DEBUG INSERT SUCCESS:', data);
+        setDebugResult({ success: true, data });
+      }
+    } catch (e) {
+      console.error('DEBUG INSERT EXCEPTION:', e);
+      setDebugResult({ success: false, error: e.message || String(e), raw: e });
+    } finally { setDebugLoading(false); }
+  };
         const { error } = await supabase
           .from('popups')
           .update(dbPopup)
@@ -2936,53 +2963,101 @@ function App() {
   };
 
   const handleSavePost = async (post) => {
+    // Unified payload builder for all event types
+    const buildPostPayload = (post, isUpdate = false) => {
+      // Base fields common to all event types
+      const payload = {
+        type: post.type,
+        title: post.title,
+        description: post.description,
+        date: post.date || new Date().toISOString().split('T')[0], // Default to today if empty (NOT NULL constraint)
+        time: post.time,
+        location: post.location,
+        link: post.linkURL
+      };
+
+      // Update-only fields
+      if (isUpdate) {
+        payload.show_in_news = post.showInNews;
+        payload.is_featured = post.isFeatured;
+        payload.rsvps = post.rsvps || [];
+        payload.completed = post.completed;
+        payload.cancelled = post.cancelled;
+      } else {
+        // Insert-only fields
+        payload.show_in_news = post.showInNews !== false;
+        payload.is_featured = post.isFeatured || false;
+        payload.rsvps = [];
+        payload.author = currentUser.email;
+        payload.timestamp = new Date().toISOString();
+      }
+
+      // Type-specific fields: RSVP for training/competition
+      if (post.type === 'training' || post.type === 'competition') {
+        payload.max_participants = post.maxParticipants ? parseInt(post.maxParticipants, 10) : null;
+        payload.trener = post.trainer;
+      }
+
+      // Normalize: convert empty strings to null, filter undefined
+      const normalized = {};
+      for (const [key, value] of Object.entries(payload)) {
+        if (value === undefined) continue;
+
+        if (typeof value === 'string') {
+          const trimmed = value.trim();
+          normalized[key] = trimmed === '' ? null : trimmed;
+        } else {
+          normalized[key] = value;
+        }
+      }
+
+      // Runtime assertion: catch empty strings before they reach database
+      Object.entries(normalized).forEach(([key, value]) => {
+        if (value === '') {
+          throw new Error(`BUG: empty string in payload for ${key}`);
+        }
+      });
+
+      return normalized;
+    };
+
+    // Validate required fields
+    if (!post.title?.trim()) {
+      showToast(t.error + ': ' + (language === 'en' ? 'Title is required' : 'Naslov je obvezen'), 'error');
+      return;
+    }
+    if (!post.type) {
+      showToast(t.error + ': ' + (language === 'en' ? 'Event type is required' : 'Tip dogodka je obvezen'), 'error');
+      return;
+    }
+
+    // Only superadmin can create/edit news
+    if (post.type === 'news' && userRole !== 'superadmin') {
+      showToast(t.error + ': ' + (language === 'en' ? 'Only superadmin can create news' : 'Samo superadmin lahko ustvarja novice'), 'error');
+      return;
+    }
+
     try {
       if (post.id) {
         // Update existing post
-        const { error } = await supabase
+        const payload = buildPostPayload(post, true);
+
+        const { error: updateError } = await supabase
           .from('posts')
-          .update({
-            type: post.type,
-            title: post.title,
-            description: post.description,
-            date: post.date,
-            time: post.time,
-            location: post.location,
-            link: post.link,
-            max_participants: post.maxParticipants,
-            trener: post.trener,
-            show_in_news: post.showInNews,
-            is_featured: post.isFeatured,
-            rsvps: post.rsvps || [],
-            completed: post.completed,
-            cancelled: post.cancelled
-          })
+          .update(payload)
           .eq('id', post.id);
 
-        if (error) throw error;
+        if (updateError) throw new Error(formatSupabaseError(updateError));
       } else {
         // Create new post
-        const { error } = await supabase
-          .from('posts')
-          .insert({
-            type: post.type,
-            title: post.title,
-            description: post.description,
-            date: post.date,
-            time: post.time || '23:59',
-            location: post.location,
-            link: post.link,
-            max_participants: post.maxParticipants,
-            trener: post.trener,
-            show_in_news: post.showInNews !== false,
-            is_featured: post.isFeatured || false,
-            rsvps: [],
-            author: currentUser.email,
-            author_id: currentUser.id,
-            timestamp: new Date().toISOString()
-          });
+        const payload = buildPostPayload(post, false);
 
-        if (error) throw error;
+        const { data: insertedData, error: insertError } = await supabase
+          .from('posts')
+          .insert(payload)
+          .select();
+
+        if (insertError) throw new Error(formatSupabaseError(insertError));
         if (post.showInNews) sendNotification('Nov dogodek: ' + post.title, post.description?.substring(0, 100) || '');
       }
       setEditingPost(null);
@@ -3012,11 +3087,11 @@ function App() {
           rsvps: []
         };
 
-        const { error } = await supabase
+        const { error: csvInsertError } = await supabase
           .from('posts')
-          .insert(dbEvent);
+          .insert((() => { const c = { ...dbEvent }; Object.keys(c).forEach(k => { if (c[k] === '') c[k] = null; }); return c; })());
 
-        if (error) throw error;
+        if (csvInsertError) throw new Error(formatSupabaseError(csvInsertError));
         successCount++;
       }
       setShowCSVImport(false);
@@ -3213,16 +3288,46 @@ function App() {
   };
 
   const handlePasswordChange = async () => {
-    if (!passwordForm.currentPassword || passwordForm.newPassword.length < 7 || passwordForm.newPassword !== passwordForm.confirmPassword) { showToast(t.checkInput || 'Preverite vnos', 'error'); return; }
+    // Validation
+    if (!passwordForm.currentPassword) {
+      showToast(language === 'en' ? 'Current password is required' : 'Trenutno geslo je obvezno', 'error');
+      return;
+    }
+    if (passwordForm.newPassword.length < 7) {
+      showToast(language === 'en' ? 'New password must be at least 7 characters' : 'Novo geslo mora imeti vsaj 7 znakov', 'error');
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      showToast(language === 'en' ? 'Passwords do not match' : 'Gesli se ne ujemata', 'error');
+      return;
+    }
+
     try {
-      const { error } = await supabase.auth.updateUser({
+      // Step 1: Reauthenticate with current password
+      const { data: { user }, error: signInError } = await supabase.auth.signInWithPassword({
+        email: currentUser.email,
+        password: passwordForm.currentPassword
+      });
+
+      if (signInError) {
+        showToast(language === 'en' ? 'Current password is incorrect' : 'Trenutno geslo je napačno', 'error');
+        return;
+      }
+
+      // Step 2: Update to new password
+      const { error: updateError } = await supabase.auth.updateUser({
         password: passwordForm.newPassword
       });
-      if (error) throw error;
-      showToast(t.passwordChanged, 'success');
+
+      if (updateError) throw updateError;
+
+      // Success
+      showToast(t.passwordChanged || 'Geslo spremenjeno!', 'success');
       setShowPasswordForm(false);
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-    } catch (e) { showToast((t.error || 'Napaka') + ': ' + e.message, 'error'); }
+    } catch (e) {
+      showToast((t.error || 'Napaka') + ': ' + e.message, 'error');
+    }
   };
 
   const addOroznaListina = () => setProfileData({ ...profileData, orozneListine: [...profileData.orozneListine, { vrsta: '', stevilo: '' }] });
@@ -3412,7 +3517,7 @@ function App() {
   const renderMessageWithMentions = (text) => text.split(/(@\w+\s+\w+)/g).map((p, i) => p.startsWith('@') ? <span key={i} style={{ color: '#60a5fa', fontWeight: '600' }}>{p}</span> : p);
 
   const getDaysInMonth = (d) => ({ daysInMonth: new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(), startingDayOfWeek: new Date(d.getFullYear(), d.getMonth(), 1).getDay() });
-  const getEventsForDate = (day) => posts.filter(p => p.date === `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+  const getEventsForDate = (day) => posts.filter(p => p.type !== 'news' && p.date === `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
 
   const renderCalendarDay = (day) => {
     const events = getEventsForDate(day);
@@ -3761,10 +3866,7 @@ function App() {
     ? [{ key: 'admin-dashboard', label: t.admin, icon: BarChart3 }, { key: 'news', label: t.news, icon: FileText }, { key: 'calendar', label: t.calendar, icon: Calendar }, { key: 'chat', label: t.chat, icon: Users }, { key: 'profile', label: t.profile, icon: User }]
     : [{ key: 'news', label: t.news, icon: FileText }, { key: 'calendar', label: t.calendar, icon: Calendar }, { key: 'chat', label: t.chat, icon: Users }, { key: 'profile', label: t.profile, icon: User }];
 
-  const newsPosts = posts.filter(p =>
-    p.showInNews === true &&
-    (p.type === 'announcement' || p.type === 'payment')
-  );
+  const newsPosts = posts.filter(p => p.showInNews);
 
   return (
     <div 
@@ -3977,6 +4079,15 @@ function App() {
                   </div>
                   <ChevronRight size={22} color="rgba(255,255,255,0.3)" />
                 </div>
+                {import.meta.env.VITE_ENABLE_DB_DEBUG === 'true' && (
+                <div onClick={() => setView('admin-debug')} style={{ ...glassCardStyle, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{ width: '46px', height: '46px', borderRadius: '12px', background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px rgba(6, 182, 212, 0.3)' }}><AlertCircle size={22} color="#fff" /></div>
+                    <div><h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '2px' }}>DB Debug</h3><p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>Run test inserts and view full Supabase errors</p></div>
+                  </div>
+                  <ChevronRight size={22} color="rgba(255,255,255,0.3)" />
+                </div>
+                )}
               </>
             )}
           </div>
@@ -3997,7 +4108,6 @@ function App() {
               const parts = dateStr.split('-');
               return parts.length === 3 ? `${parts[2]}.${parts[1]}.${parts[0]}` : dateStr;
             };
-            const showTitle = post.type === 'announcement' || post.type === 'payment';
             return (
               <div key={post.id} style={{ ...glassCardStyle, padding: '12px 16px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1 }}>
@@ -4011,22 +4121,14 @@ function App() {
                     minWidth: '75px',
                     textAlign: 'center'
                   }}>
-                    {post.type === 'training' ? t.training : post.type === 'competition' ? t.match : post.type === 'announcement' ? t.announcement : post.type === 'payment' ? t.payment : 'Event'}
+                    {post.type === 'training' ? t.training : post.type === 'competition' ? t.match : 'Event'}
                   </span>
-                  {showTitle && (
-                    <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: '14px', fontWeight: '500' }}>{post.title}</span>
-                  )}
-                  {!showTitle && post.date && (
+                  {post.date && (
                     <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: '14px', fontWeight: '500' }}>
                       {formatDate(post.date)}
                     </span>
                   )}
-                  {!showTitle && post.time && <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px' }}>{post.time}</span>}
-                  {showTitle && (post.date || post.time) && (
-                    <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>
-                      {formatDate(post.date)}{post.time ? ` • ${post.time}` : ''}
-                    </span>
-                  )}
+                  {post.time && <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px' }}>{post.time}</span>}
                   <div style={{ display: 'flex', gap: '6px', marginLeft: '8px' }}>
                     {post.showInNews && <span style={{ fontSize: '12px' }}>📰</span>}
                     {post.linkURL && <Link size={14} color="#3b82f6" />}
@@ -4063,6 +4165,33 @@ function App() {
               </button>
             </div>
           )}
+          </div>
+        </div>
+      )}
+
+      {view === 'admin-debug' && (userRole === 'admin' || userRole === 'superadmin') && (
+        <div className="page-scroll">
+          <div style={pageContentPadding}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h1 style={{ fontSize: '22px', fontWeight: '700', color: '#fff' }}>DB Debug</h1>
+              <button onClick={() => { setDebugResult(null); }} style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)', color: '#fff', padding: '8px 12px', borderRadius: '8px', border: 'none', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>Clear</button>
+            </div>
+            <div style={{ ...glassCardStyle, padding: '16px', marginBottom: '12px' }}>
+              <p style={{ color: 'rgba(255,255,255,0.8)', marginBottom: '8px' }}>Use these buttons to run minimal inserts and capture the full Supabase response (error or inserted row). Also run <code>supabase/debug/debug_checks.sql</code> in your Supabase SQL editor to inspect schema and constraints.</p>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                <button onClick={() => handleTestInsert('training')} disabled={debugLoading} style={{ padding: '10px 14px', borderRadius: '8px', border: 'none', background: '#c1372a', color: '#fff', cursor: 'pointer' }}>{debugLoading ? 'Running...' : 'Insert training'}</button>
+                <button onClick={() => handleTestInsert('competition')} disabled={debugLoading} style={{ padding: '10px 14px', borderRadius: '8px', border: 'none', background: '#f59e0b', color: '#fff', cursor: 'pointer' }}>{debugLoading ? 'Running...' : 'Insert competition'}</button>
+              </div>
+            </div>
+
+            <div style={{ ...glassCardStyle, padding: '12px' }}>
+              <h3 style={{ color: '#fff', marginTop: 0 }}>Result</h3>
+              {debugResult ? (
+                <pre style={{ color: '#fff', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', overflowX: 'auto' }}>{JSON.stringify(debugResult, null, 2)}</pre>
+              ) : (
+                <p style={{ color: 'rgba(255,255,255,0.5)' }}>No result yet. Run a test insert to see the response.</p>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -4531,7 +4660,57 @@ function App() {
               <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '16px', marginBottom: '8px' }}>Ni novic</p>
               <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px' }}>{t.trainingsInCalendar}</p>
             </div>
-          ) : newsPosts.map(p => <SlimEventCard key={p.id} post={p} onShowDetail={setSelectedEvent} />)}
+          ) : newsPosts.map(p => {
+            // News items get custom card without date/time
+            if (p.type === 'news') {
+              return (
+                <div key={p.id} style={{ ...glassCardStyle, padding: '16px', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                    <div style={{
+                      width: '40px', height: '40px', borderRadius: '10px',
+                      background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      <FileText size={20} color="#fff" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <h3 style={{ color: '#fff', fontSize: '16px', fontWeight: '600', marginBottom: '8px', marginTop: 0 }}>
+                        {p.title}
+                      </h3>
+                      <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: '14px', lineHeight: '1.5', margin: 0 }}>
+                        {p.description}
+                      </p>
+                    </div>
+                  </div>
+                  {p.link && (
+                    <a
+                      href={p.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                        color: '#fff',
+                        padding: '10px 16px',
+                        borderRadius: '8px',
+                        textDecoration: 'none',
+                        fontSize: '13px',
+                        fontWeight: '600'
+                      }}
+                    >
+                      <ExternalLink size={14} />
+                      {p.linkText || t.readMore || 'Preberi več'}
+                    </a>
+                  )}
+                </div>
+              );
+            }
+            // Training/competition events use SlimEventCard
+            return <SlimEventCard key={p.id} post={p} onShowDetail={setSelectedEvent} />;
+          })}
           </div>
         </div>
       )}
@@ -4747,7 +4926,12 @@ function App() {
             {showPasswordForm && (
               <div style={{ display: 'grid', gap: '10px', marginTop: '14px' }}>
                 <input type="password" placeholder={t.currentPassword} value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} style={{ padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '16px' }} />
-                <input type="password" placeholder={t.newPassword} value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} style={{ padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '16px' }} />
+                <div>
+                  <input type="password" placeholder={t.newPassword} value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} style={{ padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+                  <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                    {language === 'en' ? 'At least 7 characters' : 'Vsaj 7 znakov'}
+                  </span>
+                </div>
                 <input type="password" placeholder={t.confirm} value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} style={{ padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '16px' }} />
                 <button onClick={handlePasswordChange} style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: '#fff', padding: '12px', borderRadius: '8px', border: 'none', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>{t.confirm}</button>
               </div>
