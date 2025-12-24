@@ -3463,7 +3463,7 @@ function App() {
     if (!messageText) return;
     setIsLoading(true);
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('messages')
         .insert({
           text: messageText,
@@ -3471,9 +3471,16 @@ function App() {
           author: currentUser.email,
           author_name: profileData.ime && profileData.priimek ? `${profileData.ime} ${profileData.priimek}` : currentUser.email,
           timestamp: new Date().toISOString()
-        });
+        })
+        .select();
 
       if (error) throw error;
+
+      // Immediately add message to UI for instant feedback
+      if (data && data[0]) {
+        setMessages(prev => [...prev, data[0]]);
+      }
+
       setNewMessage('');
       setShowMentions(false);
     } catch (e) { showToast(t.error || 'Napaka', 'error'); }
@@ -4790,13 +4797,13 @@ function App() {
               const authorRole = memberData?.role || 'user';
               const roleConfig = ROLE_COLORS[authorRole];
               return (
-                <div key={m.id} style={{ display: 'flex', justifyContent: own ? 'flex-end' : 'flex-start', marginBottom: '10px' }}>
+                <div key={m.id} style={{ display: 'flex', justifyContent: own ? 'flex-end' : 'flex-start', marginBottom: '12px' }}>
                   {!own && (
-                    <div style={{ 
-                      width: '36px', height: '36px', borderRadius: '50%', 
+                    <div style={{
+                      width: '36px', height: '36px', borderRadius: '50%',
                       background: roleConfig.gradient,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                      fontSize: '12px', fontWeight: '700', color: '#fff', 
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '12px', fontWeight: '700', color: '#fff',
                       marginRight: '10px', alignSelf: 'flex-end',
                       boxShadow: `0 2px 10px ${roleConfig.bg}55`,
                       border: authorRole !== 'user' ? `2px solid ${roleConfig.bg}` : 'none'
@@ -4804,17 +4811,17 @@ function App() {
                       {init}
                     </div>
                   )}
-                  <div style={{ maxWidth: '75%', ...glassStyle, borderRadius: own ? '18px 18px 4px 18px' : '18px 18px 18px 4px', padding: '10px 14px', background: own ? roleConfig.gradient : 'rgba(28, 31, 34, 0.8)', position: 'relative' }}>
+                  <div style={{ maxWidth: '75%', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {!own && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                        <span style={{ fontSize: '12px', color: roleConfig.bg, fontWeight: '600' }}>{m.authorName}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '4px' }}>
+                        <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.9)', fontWeight: '600' }}>{m.authorName}</span>
                         {authorRole !== 'user' && (
-                          <span style={{ 
-                            fontSize: '9px', 
-                            fontWeight: '700', 
+                          <span style={{
+                            fontSize: '9px',
+                            fontWeight: '700',
                             color: '#fff',
                             background: roleConfig.gradient,
-                            padding: '2px 6px', 
+                            padding: '2px 6px',
                             borderRadius: '4px',
                             textTransform: 'uppercase',
                             letterSpacing: '0.5px'
@@ -4824,14 +4831,16 @@ function App() {
                         )}
                       </div>
                     )}
-                    <div style={{ color: '#fff', fontSize: '14px', lineHeight: '1.5', wordBreak: 'break-word' }}>{renderMessageWithMentions(m.text)}</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-                      <span style={{ fontSize: '10px', color: own ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.4)' }}>{m.timestamp?.toDate ? new Date(m.timestamp.toDate()).toLocaleTimeString('sl', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
-                      {own && (
-                        <button onClick={() => deleteMessage(m)} style={{ background: 'none', border: 'none', padding: '2px 6px', cursor: 'pointer', color: 'rgba(255,255,255,0.5)', fontSize: '10px' }}>
-                          <Trash2 size={12} />
-                        </button>
-                      )}
+                    <div style={{ ...glassStyle, borderRadius: own ? '18px 18px 4px 18px' : '18px 18px 18px 4px', padding: '10px 14px', background: own ? roleConfig.gradient : 'rgba(28, 31, 34, 0.8)', position: 'relative' }}>
+                      <div style={{ color: '#fff', fontSize: '14px', lineHeight: '1.5', wordBreak: 'break-word' }}>{renderMessageWithMentions(m.text)}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                        <span style={{ fontSize: '10px', color: own ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.4)' }}>{m.timestamp?.toDate ? new Date(m.timestamp.toDate()).toLocaleTimeString('sl', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                        {own && (
+                          <button onClick={() => deleteMessage(m)} style={{ background: 'none', border: 'none', padding: '2px 6px', cursor: 'pointer', color: 'rgba(255,255,255,0.5)', fontSize: '10px' }}>
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
