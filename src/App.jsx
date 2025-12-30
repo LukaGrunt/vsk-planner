@@ -283,7 +283,7 @@ const PoliceTape = () => (
 );
 
 // Event Detail Modal
-const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, profileData, userRole, onCompleteTraining, onCancelTraining, t, language }) => {
+const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, profileData, userRole, onCompleteTraining, onCancelTraining, t, language, members }) => {
   const eventConfig = EVENT_COLORS[post.type];
   const IconComponent = eventConfig?.icon || FileText;
   const currentRSVPs = post.rsvps || [];
@@ -4035,7 +4035,7 @@ function App() {
       )}
       
       {showCSVImport && <CSVImportModal onClose={() => setShowCSVImport(false)} onImport={handleCSVImport} t={t} />}
-      {selectedEvent && <EventDetailModal post={selectedEvent} onClose={() => setSelectedEvent(null)} currentUser={currentUser} onRSVP={handleRSVP} onCancelRSVP={cancelRSVP} profileData={profileData} userRole={userRole} onCompleteTraining={handleCompleteTraining} onCancelTraining={handleCancelTraining} t={t} language={language} />}
+      {selectedEvent && <EventDetailModal post={selectedEvent} onClose={() => setSelectedEvent(null)} currentUser={currentUser} onRSVP={handleRSVP} onCancelRSVP={cancelRSVP} profileData={profileData} userRole={userRole} onCompleteTraining={handleCompleteTraining} onCancelTraining={handleCancelTraining} t={t} language={language} members={members} />}
 
       {view === 'admin-dashboard' && (userRole === 'admin' || userRole === 'superadmin') && (
         <div className="page-scroll">
