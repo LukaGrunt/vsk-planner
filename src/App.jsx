@@ -546,29 +546,41 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
             </div>
           )}
 
-          {(post.type === 'training' || post.type === 'competition') && post.trainer && (
-            <div style={{
-              ...glassCardStyle,
-              padding: '14px',
-              marginBottom: '12px'
-            }}>
-              <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '1px' }}>Vodja / Trener</div>
-              <div style={{ color: '#fff', fontWeight: '600', fontSize: '15px' }}>{post.trainer}</div>
-              {post.trainerContact && (
-                <a href={`tel:${post.trainerContact}`} style={{
-                  color: '#3b82f6',
-                  fontSize: '13px',
-                  textDecoration: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  marginTop: '4px'
-                }}>
-                  📞 {post.trainerContact}
-                </a>
-              )}
-            </div>
-          )}
+          {(post.type === 'training' || post.type === 'competition') && post.trainer && (() => {
+            // Find trainer's phone number from members list
+            const trainerMember = members.find(m =>
+              `${m.ime || ''} ${m.priimek || ''}`.trim().toLowerCase() === post.trainer.toLowerCase()
+            );
+            const trainerPhone = trainerMember?.telefon || null;
+
+            return (
+              <div style={{
+                ...glassCardStyle,
+                padding: '14px',
+                marginBottom: '12px'
+              }}>
+                <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '1px' }}>Vodja / Trener</div>
+                <div style={{ color: '#fff', fontWeight: '600', fontSize: '15px' }}>{post.trainer}</div>
+                {trainerPhone ? (
+                  <a href={`tel:${trainerPhone}`} style={{
+                    color: '#3b82f6',
+                    fontSize: '13px',
+                    textDecoration: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    marginTop: '4px'
+                  }}>
+                    📞 {trainerPhone}
+                  </a>
+                ) : (
+                  <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px', marginTop: '4px' }}>
+                    ni telefonske številke
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Link button */}
           {post.linkURL && (
