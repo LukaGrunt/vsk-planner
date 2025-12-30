@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="sl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#c1372a" />
+    <meta name="background-color" content="#0a0b0c" />
+    <meta name="description" content="VSK Planner - Vojaški strelski klub" />
+    
+    <!-- iOS PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="VSK Planner" />
+    
+    <!-- iOS Icons - Use 512 for best quality -->
+    <link rel="apple-touch-icon" href="/icon-512.png?v=3" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/icon-512.png?v=3" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-512.png?v=3" />
+    <link rel="apple-touch-icon" sizes="167x167" href="/icon-512.png?v=3" />
+    
+    <!-- iOS Splash Screens (optional but nice) -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    
+    <!-- Manifest -->
+    <link rel="manifest" href="/manifest.json?v=3" />
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/icon-192.png?v=3" />
+    
+    <title>VSK Planner</title>
+    
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
+      
+      html, body, #root {
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+      }
+      
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+        background: #0a0b0c;
+        color: #fff;
+      }
+      
+      /* THE KEY: Each page uses this class to be independently scrollable */
+      .page-scroll {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        overflow-y: scroll;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-y: contain;
+        background: #0a0b0c;
+      }
+      
+      /* Hide scrollbars but allow scrolling */
+      ::-webkit-scrollbar {
+        display: none;
+      }
+      
+      /* Loading spinner */
+      .loading-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #0a0b0c;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+      }
+      
+      .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid rgba(255,255,255,0.1);
+        border-top-color: #c1372a;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      
+      @keyframes slideDown {
+        from { transform: translateX(-50%) translateY(-100%); opacity: 0; }
+        to { transform: translateX(-50%) translateY(0); opacity: 1; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="loading-screen">
+        <img src="https://vsk.si/wp-content/uploads/2023/01/VSK.png" alt="VSK" style="height: 60px; margin-bottom: 20px;" />
+        <div class="loading-spinner"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.jsx"></script>
+    <script>
+      // Register Service Worker
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/service-worker.js')
+            .then(registration => {
+              console.log('SW registered:', registration);
+            })
+            .catch(error => {
+              console.log('SW registration failed:', error);
+            });
+        });
+      }
+    </script>
+  </body>
+</html>
