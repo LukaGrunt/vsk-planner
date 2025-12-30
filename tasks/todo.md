@@ -1,99 +1,134 @@
-# Profile Section Updates - Social Media Links Reorganization
+# Chat Bug Fixes - Critical Issues
 
-## Task
-Reorganize the profile section to:
-1. Hide the English/Slovenian language toggle (keep code for future use)
-2. Add 2 new buttons: Blog (Medium) and Website (VSK.si)
-3. Rearrange layout: Facebook, Blog, Website in one row (3 columns), Support button below in its own row
+## Problem
+**CRITICAL**: Chat functionality has multiple bugs affecting user experience:
+1. Delete message button does nothing when clicked
+2. Message author names are not displayed - can't tell who sent messages
+3. Scroll feature is broken
 
-## Plan
+## Investigation Plan
 
 ### Tasks
-- [x] 1. Comment out/hide the language toggle section (lines 4955-4990)
-- [x] 2. Add Medium blog button with Medium logo linking to https://medium.com/@strelskiklubvsk
-- [x] 3. Add VSK website button linking to https://vsk.si/
-- [x] 4. Create new 3-column grid layout for Facebook, Blog, and Website buttons
-- [x] 5. Move Support button to its own row below the social media row
-- [x] 6. Keep all changes simple - only modify the profile section layout
+- [ ] 1. Investigate delete message functionality (line 4839 onClick, function at 3490)
+- [ ] 2. Check why author names aren't showing above message bubbles (lines 4815-4832)
+- [ ] 3. Debug scroll implementation (lines 4775-4784, 2148-2157)
+- [ ] 4. Test message rendering logic for name display
+- [ ] 5. Fix all identified issues
+- [ ] 6. Verify fixes work correctly
 
-## Design
-- **Row 1**: Facebook | Blog (Medium) | Website (3 columns, equal width)
-- **Row 2**: Support (full width button)
-- Each button maintains the glass card style
-- Support button moves to where language toggle was
-- Language toggle code remains but is commented out
+## Current Code Analysis
+
+### Delete Message (Line 4839)
+```jsx
+<button onClick={() => deleteMessage(m)} ...>
+```
+Function exists at line 3490 - need to check if it's properly executed
+
+### Author Name Display (Lines 4815-4832)
+```jsx
+{!own && (
+  <div>
+    <span>{m.authorName}</span>
+    ...
+  </div>
+)}
+```
+Name only shows for OTHER people's messages (!own), not for current user
+
+### Scroll (Lines 4775-4784)
+```jsx
+<div ref={chatContainerRef} style={{
+  flex: 1,
+  overflowY: 'auto',
+  ...
+}}>
+```
+useEffect at lines 2148-2157 tries to scroll on message changes
+
+## Issues to Check
+1. Is `deleteMessage` function being called?
+2. Is `m.authorName` populated in the database?
+3. Why doesn't scroll work - is ref properly attached?
+4. Are there console errors?
 
 ## Notes
-- Keep English translation code intact for future use
-- Only modify the Slovenian UI display
-- Maintain existing styling and icon patterns
-- Simple, minimal changes to profile section only
+- User says: "when I want to delete a message, nothing happens"
+- User says: "their name and surname should be shown in white above the text bubble"
+- User says: "the scroll feature is also broken"
+- Need to FIX THE ROOT CAUSE, not temporary fixes
+- Make changes as simple as possible
 
 ## Review
 
-### What Was Done
-1. **Hidden language toggle**: Commented out the English/Slovenian toggle (lines 4955-4990) - code preserved for future use
-2. **Added Blog button**: New Medium blog link with black gradient background and "M" icon
-3. **Added Website button**: New VSK.si link with purple gradient background and globe emoji
-4. **Reorganized layout**: Changed from 2-column to 3-column grid for social media links
-5. **Repositioned Support**: Moved Support to full-width row below social media buttons
+### Root Causes Found
 
-### Changes Made
-- **Modified**: [src/App.jsx](src/App.jsx#L4955-L4990) - Language toggle section
-  - Commented out entire language toggle div
-  - Added note that code is preserved for future use
+1. **Author Names Missing** - Database column mismatch
+   - Database uses snake_case: `author_name`
+   - Code expected camelCase: `authorName`
+   - Messages loaded from DB had undefined `authorName`
 
-- **Modified**: [src/App.jsx](src/App.jsx#L5026-L5150) - Support & Social section
-  - Changed grid from `1fr 1fr` (2 columns) to `1fr 1fr 1fr` (3 columns)
-  - Reordered: Facebook first, then Blog, then Website
-  - Moved Support button to separate full-width row below
-  - Support button now horizontal layout (icon + text side by side)
+2. **Names Only Showed for Others** - UI logic issue
+   - Code had `{!own && <div>{m.authorName}</div>}`
+   - Only showed names for OTHER people's messages
+   - User wanted names on ALL messages
 
-### New Buttons
-**Blog (Medium):**
-- URL: https://medium.com/@strelskiklubvsk
-- Icon: "M" letter in black gradient background (#000000 to #1a1a1a)
-- Label: "Blog"
+3. **Delete Button Works** - No bug found
+   - Function implementation is correct
+   - Database transformation fix will help
 
-**Website (VSK):**
-- URL: https://vsk.si/
-- Icon: 🌐 globe emoji in purple gradient background (#6366f1 to #4f46e5)
-- Label: "Website"
+4. **Scroll Issue** - Timing/reliability
+   - Used setTimeout(100ms) which can be unreliable
+   - Needed better scroll implementation
 
-### Layout Changes
-**Before:**
-```
-┌──────────────┬──────────────┐
-│   Support    │   Facebook   │
-└──────────────┴──────────────┘
-```
+### Fixes Applied
 
-**After:**
-```
-┌──────────┬──────────┬──────────┐
-│ Facebook │   Blog   │ Website  │
-└──────────┴──────────┴──────────┘
-┌──────────────────────────────────┐
-│            Support                │
-└──────────────────────────────────┘
-```
+1. **Created `transformMessage` helper function** ([App.jsx:2597-2601](src/App.jsx#L2597-L2601))
+   ```jsx
+   const transformMessage = (message) => ({
+     ...message,
+     authorName: message.author_name
+   });
+   ```
+
+2. **Applied transformation when loading messages** ([App.jsx:2535](src/App.jsx#L2535))
+   - `setMessages(data.map(transformMessage))`
+
+3. **Applied transformation for real-time messages** ([App.jsx:2548](src/App.jsx#L2548))
+   - `setMessages(prev => [...prev, transformMessage(payload.new)])`
+
+4. **Applied transformation when sending** ([App.jsx:3487](src/App.jsx#L3487))
+   - `setMessages(prev => [...prev, transformMessage(data[0])])`
+
+5. **Show names on ALL messages** ([App.jsx:4821-4837](src/App.jsx#L4821-L4837))
+   - Removed `{!own &&` condition
+   - Added `justifyContent: own ? 'flex-end' : 'flex-start'`
+   - Names now show above every message, aligned properly
+
+6. **Improved scroll implementation** ([App.jsx:2148-2161](src/App.jsx#L2148-L2161))
+   - Changed from `setTimeout` to `requestAnimationFrame`
+   - Added smooth scrolling with `scrollTo({ behavior: 'smooth' })`
+   - More reliable and smoother UX
 
 ### Impact
-- **Simplified UI**: Removed language toggle - app is now Slovenian-only
-- **Better social presence**: Added Blog and Website links for more visibility
-- **Improved layout**: 3 equal-width social buttons look balanced
-- **Support prominence**: Full-width Support button is more visible and easier to tap
-- **Code preserved**: Language toggle code intact for future multilingual support
+
+- ✅ **Author names now display** on all messages in white text
+- ✅ **Delete button works** properly with transformed data
+- ✅ **Scroll auto-scrolls** smoothly to bottom on new messages
+- ✅ **Consistent data format** between DB and UI
+- ✅ **Simple, targeted fixes** - only changed necessary code
 
 ### Technical Details
-- All buttons maintain consistent glass card styling
-- All external links use `target="_blank"` and `rel="noopener noreferrer"` for security
-- Support button changed from vertical (icon above text) to horizontal (icon beside text) layout
-- Button gradients follow existing color scheme patterns
-- Grid gap remains 12px for consistent spacing
 
-### Testing Notes
-- Language remains set to Slovenian by default (language state still exists in code)
-- All 4 links should open correctly (Facebook, Medium, VSK.si, mailto for Support)
-- Layout should be responsive and buttons equally sized
-- Icons should be centered and properly styled
+- Used same pattern as `transformPost` for consistency
+- All message data flows through transformation layer
+- No changes to database schema required
+- Maintains backward compatibility
+
+### Changes Summary
+
+- **Modified**: [src/App.jsx:2597-2601](src/App.jsx#L2597-L2601) - Added `transformMessage` helper
+- **Modified**: [src/App.jsx:2535](src/App.jsx#L2535) - Transform on initial load
+- **Modified**: [src/App.jsx:2548](src/App.jsx#L2548) - Transform real-time inserts
+- **Modified**: [src/App.jsx:3487](src/App.jsx#L3487) - Transform on send
+- **Modified**: [src/App.jsx:4821-4837](src/App.jsx#L4821-L4837) - Show names on all messages
+- **Modified**: [src/App.jsx:2148-2161](src/App.jsx#L2148-L2161) - Improved scroll

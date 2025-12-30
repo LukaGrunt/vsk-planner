@@ -2148,11 +2148,15 @@ function App() {
   // Scroll chat to bottom when messages change or when entering chat view
   useEffect(() => {
     if (chatContainerRef.current && view === 'chat') {
-      setTimeout(() => {
+      // Use requestAnimationFrame for smooth, reliable scrolling
+      requestAnimationFrame(() => {
         if (chatContainerRef.current) {
-          chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+          chatContainerRef.current.scrollTo({
+            top: chatContainerRef.current.scrollHeight,
+            behavior: 'smooth'
+          });
         }
-      }, 100);
+      });
     }
   }, [messages, view]);
 
@@ -2532,7 +2536,7 @@ function App() {
         .order('timestamp', { ascending: true });
 
       if (!error && data) {
-        setMessages(data);
+        setMessages(data.map(transformMessage));
       }
     };
 
@@ -2545,7 +2549,7 @@ function App() {
         { event: '*', schema: 'public', table: 'messages' },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            setMessages(prev => [...prev, payload.new]);
+            setMessages(prev => [...prev, transformMessage(payload.new)]);
           } else if (payload.eventType === 'DELETE') {
             setMessages(prev => prev.filter(m => m.id !== payload.old.id));
           }
@@ -2592,6 +2596,12 @@ function App() {
     showInNews: post.show_in_news,
     isFeatured: post.is_featured,
     trainer: post.trener
+  });
+
+  // Helper function to transform database message to app format
+  const transformMessage = (message) => ({
+    ...message,
+    authorName: message.author_name
   });
 
   const loadPosts = async () => {
@@ -3478,7 +3488,7 @@ function App() {
 
       // Immediately add message to UI for instant feedback
       if (data && data[0]) {
-        setMessages(prev => [...prev, data[0]]);
+        setMessages(prev => [...prev, transformMessage(data[0])]);
       }
 
       setNewMessage('');
@@ -3505,6 +3515,10 @@ function App() {
         .eq('id', message.id);
 
       if (error) throw error;
+
+      // Immediately remove from UI (optimistic update)
+      setMessages(prev => prev.filter(m => m.id !== message.id));
+
       showToast(t.deleted || 'Izbrisano', 'success');
     } catch (e) { showToast((t.error || 'Napaka') + ': ' + e.message, 'error'); }
   };
@@ -4812,25 +4826,23 @@ function App() {
                     </div>
                   )}
                   <div style={{ maxWidth: '75%', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    {!own && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '4px' }}>
-                        <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.9)', fontWeight: '600' }}>{m.authorName}</span>
-                        {authorRole !== 'user' && (
-                          <span style={{
-                            fontSize: '9px',
-                            fontWeight: '700',
-                            color: '#fff',
-                            background: roleConfig.gradient,
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px'
-                          }}>
-                            {roleConfig.label}
-                          </span>
-                        )}
-                      </div>
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '4px', justifyContent: own ? 'flex-end' : 'flex-start' }}>
+                      <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.9)', fontWeight: '600' }}>{m.authorName || m.author || 'Unknown'}</span>
+                      {authorRole !== 'user' && (
+                        <span style={{
+                          fontSize: '9px',
+                          fontWeight: '700',
+                          color: '#fff',
+                          background: roleConfig.gradient,
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px'
+                        }}>
+                          {roleConfig.label}
+                        </span>
+                      )}
+                    </div>
                     <div style={{ ...glassStyle, borderRadius: own ? '18px 18px 4px 18px' : '18px 18px 18px 4px', padding: '10px 14px', background: own ? roleConfig.gradient : 'rgba(28, 31, 34, 0.8)', position: 'relative' }}>
                       <div style={{ color: '#fff', fontSize: '14px', lineHeight: '1.5', wordBreak: 'break-word' }}>{renderMessageWithMentions(m.text)}</div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
