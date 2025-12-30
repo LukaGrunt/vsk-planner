@@ -908,7 +908,7 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
                 borderRadius: '10px', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
               }}>
-                ✗ Odpovej trening
+                ✗ {post.type === 'competition' ? 'Odpovej tekmo' : 'Odpovej trening'}
               </button>
             </div>
           )}
