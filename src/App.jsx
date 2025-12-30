@@ -4958,12 +4958,13 @@ function App() {
               </div>
             )}
           </div>
-          
-          <div style={{ ...glassCardStyle, padding: '16px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+
+          {/* Notifications Toggle - Hidden for now, keeping code for future use */}
+          {/* <div style={{ ...glassCardStyle, padding: '16px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ color: '#fff', fontSize: '15px' }}>{t.notifications}</span>
             <button onClick={async () => { const g = await requestNotificationPermission(); setNotificationsEnabled(g); if (!g) showToast(t.enableInSettings, 'info'); }} style={{ background: notificationsEnabled ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.1)', color: notificationsEnabled ? '#10b981' : '#fff', padding: '6px 14px', borderRadius: '6px', border: 'none', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>{notificationsEnabled ? '✓ ' + t.enabled : t.enable}</button>
-          </div>
-          
+          </div> */}
+
           {/* Language Toggle - Hidden for now, keeping code for future use */}
           {/* <div style={{ ...glassCardStyle, padding: '16px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ color: '#fff', fontSize: '15px' }}>{t.language}</span>
