@@ -548,9 +548,19 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
 
           {(post.type === 'training' || post.type === 'competition') && post.trainer && (() => {
             // Find trainer's phone number from members list
-            const trainerMember = members.find(m =>
-              `${m.ime || ''} ${m.priimek || ''}`.trim().toLowerCase() === post.trainer.toLowerCase()
-            );
+            const trainerLower = post.trainer.toLowerCase().trim();
+            const trainerMember = members.find(m => {
+              const fullName = `${m.ime || ''} ${m.priimek || ''}`.trim().toLowerCase();
+              const firstName = (m.ime || '').toLowerCase().trim();
+              const lastName = (m.priimek || '').toLowerCase().trim();
+
+              // Try exact match, last name match, or first name match
+              return fullName === trainerLower ||
+                     lastName === trainerLower ||
+                     firstName === trainerLower ||
+                     fullName.includes(trainerLower) ||
+                     trainerLower.includes(lastName);
+            });
             const trainerPhone = trainerMember?.telefon || null;
 
             return (
