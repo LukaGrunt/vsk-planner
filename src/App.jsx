@@ -218,7 +218,17 @@ const formatDateSafe = (dateStr) => {
 const createEventDateTime = (dateStr, timeStr = "23:59") => {
   if (!dateStr) return null;
   const [year, month, day] = dateStr.split('-').map(Number);
-  const [hours, minutes] = (timeStr || "23:59").split(':').map(Number);
+
+  // Handle time ranges (e.g., "16.00 - 18.00" or "16:00 - 18:00") - take start time only
+  let timeToUse = timeStr || "23:59";
+  if (timeToUse.includes(' - ')) {
+    timeToUse = timeToUse.split(' - ')[0].trim();
+  }
+
+  // Replace periods with colons (e.g., "16.00" -> "16:00")
+  timeToUse = timeToUse.replace('.', ':');
+
+  const [hours, minutes] = timeToUse.split(':').map(Number);
   return new Date(year, month - 1, day, hours, minutes);
 };
 
