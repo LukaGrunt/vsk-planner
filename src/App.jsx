@@ -3346,8 +3346,8 @@ function App() {
         .from('membership_applications')
         .update({
           konfekcijska_stevilka: profileData.konfekcijskaStevilka,
-          telefon: profileData.telefon,
-          mors_stevilo: profileData.morsStevilo
+          phone_number: profileData.telefon,
+          mors_number: profileData.morsStevilo
         })
         .eq('email', currentUser.email);
 
@@ -6361,15 +6361,19 @@ function App() {
                 <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px' }}>Ni podatkov iz pristopne izjave.</div>
               )}
               {memberApplicationData && [
-                { label: 'Datum rojstva', value: memberApplicationData.datum_rojstva },
-                { label: 'Kraj rojstva', value: memberApplicationData.kraj_rojstva },
-                { label: 'Naslov', value: memberApplicationData.naslov },
-                { label: 'Poštna številka', value: memberApplicationData.postna_stevilka },
-                { label: 'Kraj', value: memberApplicationData.kraj },
-                { label: 'Vrsta članstva MORS', value: memberApplicationData.vrsta_clanstva },
-                { label: 'MORS številka', value: memberApplicationData.mors_stevilo },
+                { label: 'Ime in priimek', value: memberApplicationData.full_name },
+                { label: 'Datum rojstva', value: memberApplicationData.date_of_birth },
+                { label: 'Kraj rojstva', value: memberApplicationData.city_of_birth },
+                { label: 'Naslov', value: memberApplicationData.address },
+                { label: 'Telefonska številka', value: memberApplicationData.phone_number },
+                { label: 'Vrsta članstva MORS', value: memberApplicationData.membership_type },
+                { label: 'MORS številka', value: memberApplicationData.mors_number },
+                { label: 'Vrsta orožne listine', value: memberApplicationData.license_type },
+                { label: 'Številka orožne listine', value: memberApplicationData.license_number },
+                { label: 'Datum izdaje listine', value: memberApplicationData.license_issue_date },
+                { label: 'Upravna enota', value: memberApplicationData.license_issuing_unit },
                 { label: 'Konfekcijska številka (Majica)', value: memberApplicationData.konfekcijska_stevilka },
-                { label: 'Discipline', value: Array.isArray(memberApplicationData.discipline) ? memberApplicationData.discipline.join(', ') : memberApplicationData.discipline },
+                { label: 'Discipline', value: Array.isArray(memberApplicationData.disciplines) ? memberApplicationData.disciplines.join(', ') : memberApplicationData.disciplines },
               ].filter(f => f.value).map(f => (
                 <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                   <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>{f.label}</span>
