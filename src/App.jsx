@@ -6384,7 +6384,7 @@ function App() {
       {/* Bottom navigation with glassmorphism */}
       <div style={{
         position: 'fixed',
-        bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+        bottom: 'calc(4px + env(safe-area-inset-bottom, 0px))',
         left: '16px',
         right: '16px',
         ...glassStyle,
