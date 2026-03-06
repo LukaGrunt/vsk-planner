@@ -1603,7 +1603,7 @@ function App() {
   const [selectedDate, setSelectedDate] = useState(null);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  const [profileData, setProfileData] = useState({ ime: '', priimek: '', email: '', telefon: '', morsStevilo: '', orozneListine: [] });
+  const [profileData, setProfileData] = useState({ ime: '', priimek: '', email: '', telefon: '', morsStevilo: '', konfekcijskaStevilka: '', orozneListine: [] });
   const [editingProfile, setEditingProfile] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -1617,6 +1617,8 @@ function App() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [loginAnimation, setLoginAnimation] = useState(false);
+  const [selectedMember, setSelectedMember] = useState(null);
+  const [memberApplicationData, setMemberApplicationData] = useState(null);
   const [activePopup, setActivePopup] = useState(null);
   const [popups, setPopups] = useState([]);
   const [editingPopup, setEditingPopup] = useState(null);
@@ -2612,6 +2614,7 @@ function App() {
             email: data.email || currentUser.email,
             telefon: sanitizeInput(data.telefon) || '',
             morsStevilo: sanitizeInput(data.mors_stevilo) || '',
+            konfekcijskaStevilka: sanitizeInput(data.konfekcijska_stevilka) || '',
             orozneListine: Array.isArray(data.orozne_listine) ? data.orozne_listine : []
           });
         }
@@ -3310,6 +3313,18 @@ function App() {
     }
   };
 
+  const fetchMemberApplication = async (email) => {
+    setMemberApplicationData(null);
+    try {
+      const { data } = await supabase
+        .from('membership_applications')
+        .select('*')
+        .eq('email', email)
+        .maybeSingle();
+      setMemberApplicationData(data || null);
+    } catch (e) { /* silently ignore */ }
+  };
+
   const saveProfileData = async () => {
     try {
       const { error } = await supabase
@@ -3319,11 +3334,23 @@ function App() {
           priimek: profileData.priimek,
           telefon: profileData.telefon,
           mors_stevilo: profileData.morsStevilo,
+          konfekcijska_stevilka: profileData.konfekcijskaStevilka,
           orozne_listine: profileData.orozneListine
         })
         .eq('user_id', currentUser.id);
 
       if (error) throw error;
+
+      // Sync updated fields to membership_applications (matched by email)
+      await supabase
+        .from('membership_applications')
+        .update({
+          konfekcijska_stevilka: profileData.konfekcijskaStevilka,
+          telefon: profileData.telefon,
+          mors_stevilo: profileData.morsStevilo
+        })
+        .eq('email', currentUser.email);
+
       setEditingProfile(false);
       showToast(t.saved || 'Shranjeno', 'success');
     } catch (e) { showToast(t.error || 'Napaka', 'error'); }
@@ -3637,7 +3664,7 @@ function App() {
         animation: 'fadeIn 0.3s ease-out'
       }}>
         <img 
-          src="https://vsk.si/wp-content/uploads/2023/01/VSK.png" 
+          src="/icon-512.png" 
           alt="VSK" 
           style={{ 
             height: '80px',
@@ -3791,7 +3818,7 @@ function App() {
         {/* Logo that expands on login - only visible during animation */}
         {loginAnimation && (
           <img 
-            src="https://vsk.si/wp-content/uploads/2023/01/VSK.png" 
+            src="/icon-512.png" 
             alt="VSK" 
             style={{
               position: 'fixed',
@@ -3818,7 +3845,7 @@ function App() {
         }}>
           <div style={{ textAlign: 'center', marginBottom: '32px' }}>
             <img 
-              src="https://vsk.si/wp-content/uploads/2023/01/VSK.png" 
+              src="/icon-512.png" 
               alt="VSK" 
               style={{ height: '70px', marginBottom: '20px' }}
             />
@@ -4423,16 +4450,17 @@ function App() {
           <div style={pageContentPadding}>
           <h1 style={{ fontSize: '22px', fontWeight: '700', color: '#fff', marginBottom: '16px' }}>Člani</h1>
           {members.map(m => (
-            <div key={m.id} style={{ ...glassCardStyle, padding: '14px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+            <div key={m.id} style={{ ...glassCardStyle, padding: '14px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', cursor: 'pointer' }}
+              onClick={() => { setSelectedMember(m); fetchMemberApplication(m.email); }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 {/* Login status indicator */}
-                <div style={{ 
-                  width: '24px', 
-                  height: '24px', 
-                  borderRadius: '50%', 
+                <div style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '50%',
                   background: m.hasLoggedIn ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                  display: 'flex', 
-                  alignItems: 'center', 
+                  display: 'flex',
+                  alignItems: 'center',
                   justifyContent: 'center',
                   fontSize: '12px',
                   fontWeight: '700',
@@ -4451,7 +4479,7 @@ function App() {
                   )}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
                 <select value={m.role || 'user'} onChange={(e) => changeRole(m.id, e.target.value)} style={{ padding: '6px 10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '12px' }}>
                   <option value="user">Član</option><option value="admin">Admin</option><option value="superadmin">Super Admin</option>
                 </select>
@@ -4948,6 +4976,10 @@ function App() {
                 </div>
                 <input type="tel" placeholder={t.phone} value={profileData.telefon} onChange={(e) => setProfileData({ ...profileData, telefon: e.target.value })} style={{ padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
                 <input type="text" placeholder={t.morsNumber} value={profileData.morsStevilo} onChange={(e) => setProfileData({ ...profileData, morsStevilo: e.target.value })} style={{ padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+                <select value={profileData.konfekcijskaStevilka} onChange={(e) => setProfileData({ ...profileData, konfekcijskaStevilka: e.target.value })} style={{ padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: profileData.konfekcijskaStevilka ? '#fff' : 'rgba(255,255,255,0.4)', fontSize: '16px', width: '100%', boxSizing: 'border-box' }}>
+                  <option value="">Konfekcijska številka (Majica)</option>
+                  {['XXS','XS','S','M','L','XL','XXL'].map(s => <option key={s} value={s} style={{ background: '#1a1b1c', color: '#fff' }}>{s}</option>)}
+                </select>
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>{t.weaponLicenses}</span>
@@ -4966,6 +4998,7 @@ function App() {
               <div style={{ display: 'grid', gap: '10px' }}>
                 {profileData.telefon && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>{t.phone}</span><span style={{ color: '#fff', fontSize: '14px' }}>{profileData.telefon}</span></div>}
                 {profileData.morsStevilo && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>MORS</span><span style={{ color: '#fff', fontSize: '14px' }}>{profileData.morsStevilo}</span></div>}
+                {profileData.konfekcijskaStevilka && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>Konfekcijska številka (Majica)</span><span style={{ color: '#fff', fontSize: '14px' }}>{profileData.konfekcijskaStevilka}</span></div>}
                 {profileData.orozneListine.length > 0 && <div style={{ paddingTop: '8px' }}><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>{t.weaponLicenses}</span>{profileData.orozneListine.map((l, i) => <div key={i} style={{ color: '#fff', fontSize: '14px', marginLeft: '12px', marginTop: '6px' }}>• {l.vrsta} — {l.stevilo}</div>)}</div>}
               </div>
             )}
@@ -6286,18 +6319,81 @@ function App() {
         </div>
       )}
 
+      {/* Member detail popup */}
+      {selectedMember && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+          onClick={() => { setSelectedMember(null); setMemberApplicationData(null); }}>
+          <div style={{ background: 'rgba(20,21,22,0.98)', borderRadius: '20px', padding: '24px', width: '100%', maxWidth: '440px', maxHeight: '80vh', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.15)' }}
+            onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div>
+                <div style={{ color: '#fff', fontSize: '18px', fontWeight: '700' }}>{selectedMember.ime} {selectedMember.priimek}</div>
+                <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>{selectedMember.email}</div>
+              </div>
+              <button onClick={() => { setSelectedMember(null); setMemberApplicationData(null); }} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '8px', color: '#fff', width: '32px', height: '32px', cursor: 'pointer', fontSize: '16px' }}>×</button>
+            </div>
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>Podatki v aplikaciji</div>
+              {[
+                { label: 'Telefon', value: selectedMember.telefon },
+                { label: 'MORS številka', value: selectedMember.morsStevilo },
+                { label: 'Konfekcijska številka (Majica)', value: selectedMember.konfekcijska_stevilka },
+                { label: 'Vloga', value: selectedMember.role },
+                { label: 'Članarina', value: selectedMember.membershipPaid ? 'Plačano' : 'Ni plačano' },
+              ].filter(f => f.value).map(f => (
+                <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>{f.label}</span>
+                  <span style={{ color: '#fff', fontSize: '13px' }}>{f.value}</span>
+                </div>
+              ))}
+              {selectedMember.orozne_listine && selectedMember.orozne_listine.length > 0 && (
+                <div style={{ paddingTop: '8px' }}>
+                  <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>Orožne listine</span>
+                  {selectedMember.orozne_listine.map((l, i) => (
+                    <div key={i} style={{ color: '#fff', fontSize: '13px', marginLeft: '12px', marginTop: '4px' }}>• {l.vrsta} — {l.stevilo}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>Pristopna izjava</div>
+              {memberApplicationData === null && (
+                <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px' }}>Ni podatkov iz pristopne izjave.</div>
+              )}
+              {memberApplicationData && [
+                { label: 'Datum rojstva', value: memberApplicationData.datum_rojstva },
+                { label: 'Kraj rojstva', value: memberApplicationData.kraj_rojstva },
+                { label: 'Naslov', value: memberApplicationData.naslov },
+                { label: 'Poštna številka', value: memberApplicationData.postna_stevilka },
+                { label: 'Kraj', value: memberApplicationData.kraj },
+                { label: 'Vrsta članstva MORS', value: memberApplicationData.vrsta_clanstva },
+                { label: 'MORS številka', value: memberApplicationData.mors_stevilo },
+                { label: 'Konfekcijska številka (Majica)', value: memberApplicationData.konfekcijska_stevilka },
+                { label: 'Discipline', value: Array.isArray(memberApplicationData.discipline) ? memberApplicationData.discipline.join(', ') : memberApplicationData.discipline },
+              ].filter(f => f.value).map(f => (
+                <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>{f.label}</span>
+                  <span style={{ color: '#fff', fontSize: '13px', textAlign: 'right', maxWidth: '60%' }}>{f.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Bottom navigation with glassmorphism */}
       <div style={{
         position: 'fixed',
-        bottom: 0,
-        left: 0,
-        right: 0,
+        bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+        left: '16px',
+        right: '16px',
         ...glassStyle,
-        borderRadius: 0,
-        borderTop: '1px solid rgba(255,255,255,0.1)',
+        borderRadius: '24px',
+        border: '1px solid rgba(255,255,255,0.12)',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
         display: 'flex',
         justifyContent: 'space-around',
-        padding: '8px 0 calc(12px + env(safe-area-inset-bottom, 0px))',
+        padding: '8px 4px',
         zIndex: 100
       }}>
         {tabs.map(t => (
