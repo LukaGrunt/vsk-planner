@@ -2362,7 +2362,7 @@ function App() {
   // Helper function to load user profile from Supabase
   const loadUserProfile = async (user) => {
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Profile load timeout')), 5000)
+      setTimeout(() => reject(new Error('Profile load timeout')), 10000)
     );
 
     try {
