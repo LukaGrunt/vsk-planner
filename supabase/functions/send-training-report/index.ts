@@ -4,7 +4,7 @@ const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const RECIPIENT = 'strelskiklubvsk@gmail.com'
-const FROM = 'VSK Planner <noreply@vsk.si>'
+const FROM = 'VSK Planner <onboarding@resend.dev>'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
