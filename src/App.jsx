@@ -1605,6 +1605,8 @@ function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [profileData, setProfileData] = useState({ ime: '', priimek: '', email: '', telefon: '', morsStevilo: '', konfekcijskaStevilka: '', orozneListine: [], orozje: [] });
   const [editingProfile, setEditingProfile] = useState(false);
+  const [editingOrozjeIndex, setEditingOrozjeIndex] = useState(null);
+  const [editingListinaIndex, setEditingListinaIndex] = useState(null);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -4988,7 +4990,7 @@ function App() {
                 <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px', marginBottom: '6px' }}>{currentUser.email}</p>
                 <span style={{ display: 'inline-block', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '600', background: userRole === 'superadmin' ? 'rgba(245, 158, 11, 0.2)' : userRole === 'admin' ? 'rgba(193, 55, 42, 0.2)' : 'rgba(59, 130, 246, 0.2)', color: userRole === 'superadmin' ? '#f59e0b' : userRole === 'admin' ? '#c1372a' : '#3b82f6' }}>{userRole === 'superadmin' ? t.superAdmin : userRole === 'admin' ? t.trainer : t.member}</span>
               </div>
-              <button onClick={() => { if (editingProfile) saveProfileData(); setEditingProfile(!editingProfile); }} style={{ background: editingProfile ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'rgba(255,255,255,0.1)', color: '#fff', padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>{editingProfile ? t.save : t.edit}</button>
+              <button onClick={() => { if (editingProfile) { saveProfileData(); setEditingOrozjeIndex(null); setEditingListinaIndex(null); } setEditingProfile(!editingProfile); }} style={{ background: editingProfile ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'rgba(255,255,255,0.1)', color: '#fff', padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>{editingProfile ? t.save : t.edit}</button>
             </div>
             {editingProfile ? (
               <div style={{ display: 'grid', gap: '12px' }}>
@@ -5003,39 +5005,59 @@ function App() {
                   {['XXS','XS','S','M','L','XL','XXL'].map(s => <option key={s} value={s} style={{ background: '#1a1b1c', color: '#fff' }}>{s}</option>)}
                 </select></div>
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>{t.weaponLicenses}</span>
-                    <button onClick={addOroznaListina} style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#3b82f6', padding: '4px 10px', borderRadius: '6px', border: 'none', fontSize: '11px', cursor: 'pointer' }}>+ {t.add}</button>
-                  </div>
+                  <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '11px', fontWeight: '600', display: 'block', marginBottom: '8px' }}>{t.weaponLicenses}</span>
                   {profileData.orozneListine.map((l, i) => (
-                    <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                      <input placeholder={t.licenseType} value={l.vrsta} onChange={(e) => updateOroznaListina(i, 'vrsta', e.target.value)} style={{ flex: 1, padding: '10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '16px', minWidth: 0, boxSizing: 'border-box' }} />
-                      <input placeholder={t.licenseNumber} value={l.stevilo} onChange={(e) => updateOroznaListina(i, 'stevilo', e.target.value)} style={{ width: '80px', flexShrink: 0, padding: '10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '16px', boxSizing: 'border-box' }} />
-                      <button onClick={() => removeOroznaListina(i)} style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', padding: '8px', borderRadius: '6px', border: 'none', cursor: 'pointer', flexShrink: 0 }}><Trash2 size={14} /></button>
-                    </div>
+                    editingListinaIndex === i ? (
+                      <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: '6px', padding: '10px', background: 'rgba(59,130,246,0.08)', borderRadius: '8px', border: '1px solid rgba(59,130,246,0.2)' }}>
+                        <input placeholder={t.licenseType} value={l.vrsta} onChange={(e) => updateOroznaListina(i, 'vrsta', e.target.value)} style={{ flex: 1, padding: '9px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '14px', minWidth: 0, boxSizing: 'border-box' }} />
+                        <input placeholder={t.licenseNumber} value={l.stevilo} onChange={(e) => updateOroznaListina(i, 'stevilo', e.target.value)} style={{ width: '72px', flexShrink: 0, padding: '9px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }} />
+                        <button onClick={() => setEditingListinaIndex(null)} style={{ background: 'rgba(16,185,129,0.2)', color: '#10b981', padding: '8px', borderRadius: '6px', border: 'none', cursor: 'pointer', flexShrink: 0 }}><Check size={14} /></button>
+                        <button onClick={() => { removeOroznaListina(i); setEditingListinaIndex(null); }} style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', padding: '8px', borderRadius: '6px', border: 'none', cursor: 'pointer', flexShrink: 0 }}><Trash2 size={14} /></button>
+                      </div>
+                    ) : (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', marginBottom: '6px', border: '1px solid rgba(255,255,255,0.07)' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ color: '#fff', fontSize: '14px', fontWeight: '500' }}>{l.vrsta || '—'}</div>
+                          {l.stevilo && <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: '12px', marginTop: '1px' }}>{l.stevilo}</div>}
+                        </div>
+                        <button onClick={() => setEditingListinaIndex(i)} style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)', padding: '6px', borderRadius: '6px', border: 'none', cursor: 'pointer', marginRight: '6px' }}><Edit2 size={13} /></button>
+                        <button onClick={() => removeOroznaListina(i)} style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', padding: '6px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}><Trash2 size={13} /></button>
+                      </div>
+                    )
                   ))}
+                  <button onClick={() => { addOroznaListina(); setEditingListinaIndex(profileData.orozneListine.length); }} style={{ width: '100%', padding: '9px', background: 'rgba(59,130,246,0.08)', border: '1px dashed rgba(59,130,246,0.3)', borderRadius: '8px', color: '#3b82f6', fontSize: '13px', cursor: 'pointer', marginTop: '2px' }}>+ {t.add}</button>
                 </div>
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>{t.weapons}</span>
-                    <button onClick={addOrozje} style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#3b82f6', padding: '4px 10px', borderRadius: '6px', border: 'none', fontSize: '11px', cursor: 'pointer' }}>+ {t.add}</button>
-                  </div>
+                  <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '11px', fontWeight: '600', display: 'block', marginBottom: '8px' }}>{t.weapons}</span>
                   {profileData.orozje.map((w, i) => (
-                    <div key={i} style={{ display: 'grid', gap: '6px', marginBottom: '10px', padding: '10px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.07)' }}>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <select value={w.vrsta_orozja} onChange={(e) => updateOrozje(i, 'vrsta_orozja', e.target.value)} style={{ flex: 1, padding: '10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: w.vrsta_orozja ? '#fff' : 'rgba(255,255,255,0.4)', fontSize: '14px', boxSizing: 'border-box' }}>
-                          <option value="">{t.weaponType}...</option>
-                          {['Pištola', 'Puška', 'Šibrovka', 'Drugo'].map(v => <option key={v} value={v} style={{ background: '#1a1b1c', color: '#fff' }}>{v}</option>)}
-                        </select>
-                        <button onClick={() => removeOrozje(i)} style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', padding: '8px', borderRadius: '6px', border: 'none', cursor: 'pointer', flexShrink: 0 }}><Trash2 size={14} /></button>
+                    editingOrozjeIndex === i ? (
+                      <div key={i} style={{ display: 'grid', gap: '6px', marginBottom: '6px', padding: '10px', background: 'rgba(59,130,246,0.08)', borderRadius: '8px', border: '1px solid rgba(59,130,246,0.2)' }}>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <select value={w.vrsta_orozja} onChange={(e) => updateOrozje(i, 'vrsta_orozja', e.target.value)} style={{ flex: 1, padding: '9px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: w.vrsta_orozja ? '#fff' : 'rgba(255,255,255,0.4)', fontSize: '14px', boxSizing: 'border-box' }}>
+                            <option value="">{t.weaponType}...</option>
+                            {['Pištola', 'Puška', 'Šibrovka', 'Drugo'].map(v => <option key={v} value={v} style={{ background: '#1a1b1c', color: '#fff' }}>{v}</option>)}
+                          </select>
+                          <button onClick={() => setEditingOrozjeIndex(null)} style={{ background: 'rgba(16,185,129,0.2)', color: '#10b981', padding: '8px', borderRadius: '6px', border: 'none', cursor: 'pointer', flexShrink: 0 }}><Check size={14} /></button>
+                          <button onClick={() => { removeOrozje(i); setEditingOrozjeIndex(null); }} style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', padding: '8px', borderRadius: '6px', border: 'none', cursor: 'pointer', flexShrink: 0 }}><Trash2 size={14} /></button>
+                        </div>
+                        <input placeholder={t.weaponModel} value={w.model_orozja} onChange={(e) => updateOrozje(i, 'model_orozja', e.target.value)} style={{ padding: '9px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }} />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                          <input placeholder={t.caliber} value={w.kaliber} onChange={(e) => updateOrozje(i, 'kaliber', e.target.value)} style={{ padding: '9px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }} />
+                          <input placeholder={t.serialNumber} value={w.serijska_stevilka} onChange={(e) => updateOrozje(i, 'serijska_stevilka', e.target.value)} style={{ padding: '9px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }} />
+                        </div>
                       </div>
-                      <input placeholder={t.weaponModel} value={w.model_orozja} onChange={(e) => updateOrozje(i, 'model_orozja', e.target.value)} style={{ padding: '10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }} />
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                        <input placeholder={t.caliber} value={w.kaliber} onChange={(e) => updateOrozje(i, 'kaliber', e.target.value)} style={{ padding: '10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }} />
-                        <input placeholder={t.serialNumber} value={w.serijska_stevilka} onChange={(e) => updateOrozje(i, 'serijska_stevilka', e.target.value)} style={{ padding: '10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }} />
+                    ) : (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', marginBottom: '6px', border: '1px solid rgba(255,255,255,0.07)' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ color: '#fff', fontSize: '14px', fontWeight: '500' }}>{w.vrsta_orozja || '—'}{w.model_orozja ? ` — ${w.model_orozja}` : ''}</div>
+                          {(w.kaliber || w.serijska_stevilka) && <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: '12px', marginTop: '1px' }}>{[w.kaliber, w.serijska_stevilka].filter(Boolean).join(' · ')}</div>}
+                        </div>
+                        <button onClick={() => setEditingOrozjeIndex(i)} style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)', padding: '6px', borderRadius: '6px', border: 'none', cursor: 'pointer', marginRight: '6px' }}><Edit2 size={13} /></button>
+                        <button onClick={() => removeOrozje(i)} style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', padding: '6px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}><Trash2 size={13} /></button>
                       </div>
-                    </div>
+                    )
                   ))}
+                  <button onClick={() => { addOrozje(); setEditingOrozjeIndex(profileData.orozje.length); }} style={{ width: '100%', padding: '9px', background: 'rgba(59,130,246,0.08)', border: '1px dashed rgba(59,130,246,0.3)', borderRadius: '8px', color: '#3b82f6', fontSize: '13px', cursor: 'pointer', marginTop: '2px' }}>+ {t.add}</button>
                 </div>
               </div>
             ) : (
@@ -5043,13 +5065,24 @@ function App() {
                 {profileData.telefon && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>{t.phone}</span><span style={{ color: '#fff', fontSize: '14px' }}>{profileData.telefon}</span></div>}
                 {profileData.morsStevilo && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>MORS</span><span style={{ color: '#fff', fontSize: '14px' }}>{profileData.morsStevilo}</span></div>}
                 {profileData.konfekcijskaStevilka && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>Konfekcijska številka (Majica)</span><span style={{ color: '#fff', fontSize: '14px' }}>{profileData.konfekcijskaStevilka}</span></div>}
-                {profileData.orozneListine.length > 0 && <div style={{ paddingTop: '8px' }}><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>{t.weaponLicenses}</span>{profileData.orozneListine.map((l, i) => <div key={i} style={{ color: '#fff', fontSize: '14px', marginLeft: '12px', marginTop: '6px' }}>• {l.vrsta} — {l.stevilo}</div>)}</div>}
+                {profileData.orozneListine.length > 0 && (
+                  <div style={{ paddingTop: '4px' }}>
+                    <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '11px', fontWeight: '600' }}>{t.weaponLicenses}</span>
+                    {profileData.orozneListine.map((l, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', marginTop: '4px' }}>
+                        <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px' }}>{l.vrsta}</span>
+                        <span style={{ color: '#fff', fontSize: '14px' }}>{l.stevilo}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {profileData.orozje.length > 0 && (
-                  <div style={{ paddingTop: '8px' }}>
-                    <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>{t.weapons}</span>
+                  <div style={{ paddingTop: '4px' }}>
+                    <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '11px', fontWeight: '600' }}>{t.weapons}</span>
                     {profileData.orozje.map((w, i) => (
-                      <div key={i} style={{ color: '#fff', fontSize: '14px', marginLeft: '12px', marginTop: '6px' }}>
-                        • {w.vrsta_orozja} — {w.model_orozja}{w.kaliber ? `, ${w.kaliber}` : ''}{w.serijska_stevilka ? ` (${w.serijska_stevilka})` : ''}
+                      <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', marginTop: '4px' }}>
+                        <div style={{ color: '#fff', fontSize: '14px', fontWeight: '500' }}>{w.vrsta_orozja}{w.model_orozja ? ` — ${w.model_orozja}` : ''}</div>
+                        {(w.kaliber || w.serijska_stevilka) && <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: '12px', marginTop: '2px' }}>{[w.kaliber, w.serijska_stevilka].filter(Boolean).join(' · ')}</div>}
                       </div>
                     ))}
                   </div>
