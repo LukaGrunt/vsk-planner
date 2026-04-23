@@ -70,8 +70,11 @@ function renderMemberCard(profile: MemberProfile, badge?: string, absent?: boole
       </div>`
     : ''
 
-  const noData = !licensesHtml && !weaponsHtml
-    ? `<div style="font-size:12px;color:#9ca3af;margin-top:4px;">Ni podatkov o orožju</div>`
+  const noLicenses = !licensesHtml
+    ? `<div style="font-size:12px;color:#9ca3af;margin-top:4px;">Ni orožnih listin</div>`
+    : ''
+  const noWeapons = !weaponsHtml
+    ? `<div style="font-size:12px;color:#9ca3af;margin-top:2px;">Ni orožja</div>`
     : ''
 
   return `
@@ -82,8 +85,9 @@ function renderMemberCard(profile: MemberProfile, badge?: string, absent?: boole
         ${profile.mors ? `<span style="font-size:12px;color:#9ca3af;margin-left:6px;">MORS: ${profile.mors}</span>` : ''}
       </div>
       ${licensesHtml}
+      ${noLicenses}
       ${weaponsHtml}
-      ${noData}
+      ${noWeapons}
     </div>`
 }
 
@@ -100,8 +104,8 @@ function buildEmailHtml(data: {
 }): string {
   const { title, date, time, location, type, trainerName, trainerProfile, attendees, notes } = data
 
-  const presentCount = attendees.filter(a => a.present).length
-  const totalCount = attendees.length
+  const presentCount = attendees.filter(a => a.present).length + 1
+  const totalCount = attendees.length + 1
 
   const attendeesHtml = attendees.map(a =>
     renderMemberCard(a.profile, undefined, !a.present)
@@ -195,7 +199,34 @@ Deno.serve(async (req) => {
       }
     }
 
-    const trainerProfile = await getMemberProfile(trainerEmail)
+    async function getMemberProfileByName(name: string): Promise<MemberProfile | null> {
+      const parts = name.trim().split(' ')
+      if (parts.length < 2) return null
+      const ime = parts[0]
+      const priimek = parts.slice(1).join(' ')
+      const { data: member } = await supabase
+        .from('members')
+        .select('email, ime, priimek, mors_stevilo, orozne_listine')
+        .eq('ime', ime)
+        .eq('priimek', priimek)
+        .maybeSingle()
+      if (!member?.email) return null
+      const { data: app } = await supabase
+        .from('membership_applications')
+        .select('weapons')
+        .eq('email', member.email)
+        .maybeSingle()
+      return {
+        name: `${member.ime || ''} ${member.priimek || ''}`.trim(),
+        mors: member.mors_stevilo || '',
+        orozneListine: Array.isArray(member.orozne_listine)
+          ? member.orozne_listine.filter((l: License) => l.vrsta || l.stevilo)
+          : [],
+        weapons: Array.isArray(app?.weapons) ? app.weapons : [],
+      }
+    }
+
+    const trainerProfile = (trainerName ? await getMemberProfileByName(trainerName) : null) ?? await getMemberProfile(trainerEmail)
 
     const attendeeProfiles = await Promise.all(
       (attendees || []).map(async (a: { email: string; name: string; present: boolean }) => ({

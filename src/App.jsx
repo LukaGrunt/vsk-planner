@@ -330,11 +330,7 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
   
   const handleSaveAAR = async () => {
     setSavingAAR(true);
-    const trainerMember = members?.find(m =>
-      `${m.ime || ''} ${m.priimek || ''}`.trim() === (post.trener || '').trim()
-    );
-    const trainerEmailToUse = trainerMember?.email || currentUser.email;
-    await onCompleteTraining(post.id, attendance, trainerNotes, post, trainerEmailToUse);
+    await onCompleteTraining(post.id, attendance, trainerNotes, post, currentUser.email);
     setSavingAAR(false);
     setShowAAR(false);
     onClose();
