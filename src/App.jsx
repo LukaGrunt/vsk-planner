@@ -5040,10 +5040,10 @@ function App() {
                           <button onClick={() => setEditingOrozjeIndex(null)} style={{ background: 'rgba(16,185,129,0.2)', color: '#10b981', padding: '8px', borderRadius: '6px', border: 'none', cursor: 'pointer', flexShrink: 0 }}><Check size={14} /></button>
                           <button onClick={() => { removeOrozje(i); setEditingOrozjeIndex(null); }} style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', padding: '8px', borderRadius: '6px', border: 'none', cursor: 'pointer', flexShrink: 0 }}><Trash2 size={14} /></button>
                         </div>
-                        <input placeholder={t.weaponModel} value={w.model_orozja} onChange={(e) => updateOrozje(i, 'model_orozja', e.target.value)} style={{ padding: '9px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }} />
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                          <input placeholder={t.caliber} value={w.kaliber} onChange={(e) => updateOrozje(i, 'kaliber', e.target.value)} style={{ padding: '9px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }} />
-                          <input placeholder={t.serialNumber} value={w.serijska_stevilka} onChange={(e) => updateOrozje(i, 'serijska_stevilka', e.target.value)} style={{ padding: '9px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '14px', boxSizing: 'border-box' }} />
+                        <input placeholder={t.weaponModel} value={w.model_orozja} onChange={(e) => updateOrozje(i, 'model_orozja', e.target.value)} style={{ padding: '9px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '14px', width: '100%', boxSizing: 'border-box' }} />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', minWidth: 0 }}>
+                          <input placeholder={t.caliber} value={w.kaliber} onChange={(e) => updateOrozje(i, 'kaliber', e.target.value)} style={{ padding: '9px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '14px', width: '100%', boxSizing: 'border-box' }} />
+                          <input placeholder={t.serialNumber} value={w.serijska_stevilka} onChange={(e) => updateOrozje(i, 'serijska_stevilka', e.target.value)} style={{ padding: '9px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '14px', width: '100%', boxSizing: 'border-box' }} />
                         </div>
                       </div>
                     ) : (
