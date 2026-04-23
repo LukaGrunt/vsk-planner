@@ -5025,7 +5025,7 @@ function App() {
                       <div style={{ display: 'flex', gap: '6px' }}>
                         <select value={w.vrsta_orozja} onChange={(e) => updateOrozje(i, 'vrsta_orozja', e.target.value)} style={{ flex: 1, padding: '10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: w.vrsta_orozja ? '#fff' : 'rgba(255,255,255,0.4)', fontSize: '14px', boxSizing: 'border-box' }}>
                           <option value="">{t.weaponType}...</option>
-                          {['Pištola', 'Puška', 'Revolver', 'Pnevmatsko orožje', 'Drugo'].map(v => <option key={v} value={v} style={{ background: '#1a1b1c', color: '#fff' }}>{v}</option>)}
+                          {['Pištola', 'Puška', 'Šibrovka', 'Drugo'].map(v => <option key={v} value={v} style={{ background: '#1a1b1c', color: '#fff' }}>{v}</option>)}
                         </select>
                         <button onClick={() => removeOrozje(i)} style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', padding: '8px', borderRadius: '6px', border: 'none', cursor: 'pointer', flexShrink: 0 }}><Trash2 size={14} /></button>
                       </div>
