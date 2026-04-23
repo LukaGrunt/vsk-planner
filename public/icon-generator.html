@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VSK Icon Generator</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        h1 { color: #c1372a; }
+        .canvas-container {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        canvas {
+            border: 1px solid #333;
+            border-radius: 20px;
+        }
+        button {
+            background: #c1372a;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover { background: #a02d22; }
+        .instructions {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        a { color: #3b82f6; }
+    </style>
+</head>
+<body>
+    <h1>VSK App Icon Generator</h1>
+    
+    <div class="instructions">
+        <p>This tool creates the app icons you need for the PWA.</p>
+        <p>The icons will be generated with the VSK logo on a dark background.</p>
+    </div>
+
+    <div class="canvas-container">
+        <div>
+            <p>512x512</p>
+            <canvas id="canvas512" width="512" height="512"></canvas>
+        </div>
+        <div>
+            <p>192x192</p>
+            <canvas id="canvas192" width="192" height="192"></canvas>
+        </div>
+    </div>
+
+    <div>
+        <button onclick="downloadIcon(512)">Download icon-512.png</button>
+        <button onclick="downloadIcon(192)">Download icon-192.png</button>
+    </div>
+
+    <div class="instructions" style="margin-top: 30px;">
+        <h3>After downloading:</h3>
+        <ol>
+            <li>Place both files in the <code>public/</code> folder of your project</li>
+            <li>Run <code>npm run build</code></li>
+            <li>Run <code>firebase deploy</code></li>
+        </ol>
+    </div>
+
+    <script>
+        const logo = new Image();
+        logo.crossOrigin = 'anonymous';
+        logo.src = 'https://vsk.si/wp-content/uploads/2023/01/VSK.png';
+        
+        logo.onload = function() {
+            drawIcon(512);
+            drawIcon(192);
+        };
+
+        logo.onerror = function() {
+            // If CORS fails, draw a placeholder
+            drawPlaceholder(512);
+            drawPlaceholder(192);
+            alert('Could not load VSK logo due to CORS. Please create icons manually using Canva or another tool.');
+        };
+
+        function drawIcon(size) {
+            const canvas = document.getElementById('canvas' + size);
+            const ctx = canvas.getContext('2d');
+            
+            // Dark background with subtle gradient
+            const gradient = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+            gradient.addColorStop(0, '#1a1a1a');
+            gradient.addColorStop(1, '#0a0b0c');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, size, size);
+            
+            // Draw logo centered
+            const logoSize = size * 0.6;
+            const x = (size - logoSize) / 2;
+            const y = (size - logoSize) / 2;
+            
+            // Maintain aspect ratio
+            const aspectRatio = logo.width / logo.height;
+            let drawWidth = logoSize;
+            let drawHeight = logoSize / aspectRatio;
+            
+            if (drawHeight > logoSize) {
+                drawHeight = logoSize;
+                drawWidth = logoSize * aspectRatio;
+            }
+            
+            const drawX = (size - drawWidth) / 2;
+            const drawY = (size - drawHeight) / 2;
+            
+            ctx.drawImage(logo, drawX, drawY, drawWidth, drawHeight);
+        }
+
+        function drawPlaceholder(size) {
+            const canvas = document.getElementById('canvas' + size);
+            const ctx = canvas.getContext('2d');
+            
+            // Dark background
+            ctx.fillStyle = '#0a0b0c';
+            ctx.fillRect(0, 0, size, size);
+            
+            // VSK text
+            ctx.fillStyle = '#c1372a';
+            ctx.font = `bold ${size * 0.2}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('VSK', size/2, size/2);
+        }
+
+        function downloadIcon(size) {
+            const canvas = document.getElementById('canvas' + size);
+            const link = document.createElement('a');
+            link.download = 'icon-' + size + '.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+    </script>
+</body>
+</html>

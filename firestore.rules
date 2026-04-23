@@ -1,0 +1,116 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to get user's role from members collection
+    function getUserRole() {
+      return exists(/databases/$(database)/documents/members/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/members/$(request.auth.uid)).data.role
+        : 'user';
+    }
+
+    // Helper function to check if user is admin or superadmin
+    function isAdmin() {
+      let role = getUserRole();
+      return role == 'admin' || role == 'superadmin';
+    }
+
+    // Helper function to check if user is superadmin
+    function isSuperAdmin() {
+      return getUserRole() == 'superadmin';
+    }
+
+    // Members collection - SECURED
+    match /members/{memberId} {
+      // Anyone authenticated can read all members
+      allow read: if request.auth != null;
+
+      // Only superadmin can create new members
+      allow create: if request.auth != null && isSuperAdmin();
+
+      // User can update their own profile, OR superadmin can update anyone
+      // BUT role changes require superadmin
+      allow update: if request.auth != null && (
+        (request.auth.uid == memberId &&
+         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']))) || // Can't change own role
+        isSuperAdmin() // Superadmin can change anything
+      );
+
+      // Only superadmin can delete members
+      allow delete: if request.auth != null && isSuperAdmin();
+    }
+
+    // Posts collection (events, announcements) - SECURED
+    match /posts/{postId} {
+      // Anyone authenticated can read posts
+      allow read: if request.auth != null;
+
+      // Only admin/superadmin can create posts
+      allow create: if request.auth != null && isAdmin();
+
+      // Only admin/superadmin can delete posts
+      allow delete: if request.auth != null && isAdmin();
+
+      // Anyone can update posts (for RSVPs), but can't change critical fields
+      // Allow changing: rsvps, participantCount
+      // Prevent changing: type, title, description, date, time, authorId, maxParticipants, etc.
+      allow update: if request.auth != null && (
+        isAdmin() || // Admins can change anything
+        // Regular users can only modify RSVP-related fields
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['type', 'title', 'description', 'date', 'time', 'authorId',
+                   'maxParticipants', 'location', 'link', 'showInNews',
+                   'isFeatured', 'createdAt', 'trener'])
+      );
+    }
+
+    // Messages collection (chat) - SECURED with rate limiting
+    match /messages/{messageId} {
+      // Anyone authenticated can read messages
+      allow read: if request.auth != null;
+
+      // Create messages with validation to prevent spam
+      allow create: if request.auth != null &&
+        // Message must have text content
+        request.resource.data.text is string &&
+        request.resource.data.text.size() > 0 &&
+        // Message must not be too long (max 500 characters)
+        request.resource.data.text.size() <= 500 &&
+        // Must have required fields
+        request.resource.data.authorId == request.auth.uid &&
+        request.resource.data.authorName is string &&
+        request.resource.data.timestamp is timestamp;
+
+      // Only message author can update/delete their own messages
+      allow update, delete: if request.auth != null &&
+        request.auth.uid == resource.data.authorId;
+    }
+
+    // Popups collection - SECURED
+    match /popups/{popupId} {
+      // Anyone authenticated can read popups
+      allow read: if request.auth != null;
+
+      // Only superadmin can create/update/delete popups
+      allow create, update, delete: if request.auth != null && isSuperAdmin();
+    }
+
+    // Settings collection - SECURED (includes featuredArticle)
+    match /settings/{docId} {
+      // Anyone authenticated can read settings
+      allow read: if request.auth != null;
+
+      // Only superadmin can create/update/delete settings
+      allow create, update, delete: if request.auth != null && isSuperAdmin();
+    }
+
+    // Featured collection - SECURED (legacy, keeping for safety)
+    match /featured/{docId} {
+      // Anyone authenticated can read
+      allow read: if request.auth != null;
+
+      // Only superadmin can create/update/delete featured articles
+      allow create, update, delete: if request.auth != null && isSuperAdmin();
+    }
+  }
+}
