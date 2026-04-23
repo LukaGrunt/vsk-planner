@@ -130,11 +130,15 @@ function buildEmailHtml(data: {
     </div>
 
     <!-- Info bar -->
-    <div style="background:#fff;padding:16px 28px;border-left:1px solid #e5e7eb;border-right:1px solid #e5e7eb;display:flex;gap:24px;flex-wrap:wrap;">
-      ${date ? `<div><span style="font-size:11px;color:#9ca3af;display:block;">Datum</span><span style="font-size:14px;font-weight:600;color:#111827;">${formatDate(date)}</span></div>` : ''}
-      ${time ? `<div><span style="font-size:11px;color:#9ca3af;display:block;">Čas</span><span style="font-size:14px;font-weight:600;color:#111827;">${time}</span></div>` : ''}
-      ${location ? `<div><span style="font-size:11px;color:#9ca3af;display:block;">Lokacija</span><span style="font-size:14px;font-weight:600;color:#111827;">${location}</span></div>` : ''}
-      <div><span style="font-size:11px;color:#9ca3af;display:block;">Prisotnost</span><span style="font-size:14px;font-weight:600;color:#059669;">${presentCount} / ${totalCount}</span></div>
+    <div style="background:#fff;border-left:1px solid #e5e7eb;border-right:1px solid #e5e7eb;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+        <tr>
+          ${date ? `<td style="padding:14px 20px;vertical-align:top;"><span style="font-size:11px;color:#9ca3af;display:block;margin-bottom:2px;">Datum</span><span style="font-size:14px;font-weight:600;color:#111827;">${formatDate(date)}</span></td>` : ''}
+          ${time ? `<td style="padding:14px 20px;vertical-align:top;"><span style="font-size:11px;color:#9ca3af;display:block;margin-bottom:2px;">Čas</span><span style="font-size:14px;font-weight:600;color:#111827;">${time}</span></td>` : ''}
+          ${location ? `<td style="padding:14px 20px;vertical-align:top;"><span style="font-size:11px;color:#9ca3af;display:block;margin-bottom:2px;">Lokacija</span><span style="font-size:14px;font-weight:600;color:#111827;">${location}</span></td>` : ''}
+          <td style="padding:14px 20px;vertical-align:top;"><span style="font-size:11px;color:#9ca3af;display:block;margin-bottom:2px;">Prisotnost</span><span style="font-size:14px;font-weight:600;color:#059669;">${presentCount} / ${totalCount}</span></td>
+        </tr>
+      </table>
     </div>
 
     <!-- Body -->
@@ -184,7 +188,9 @@ Deno.serve(async (req) => {
       return {
         name,
         mors: member?.mors_stevilo || '',
-        orozneListine: Array.isArray(member?.orozne_listine) ? member.orozne_listine : [],
+        orozneListine: Array.isArray(member?.orozne_listine)
+          ? member.orozne_listine.filter((l: License) => l.vrsta || l.stevilo)
+          : [],
         weapons: Array.isArray(app?.weapons) ? app.weapons : [],
       }
     }
