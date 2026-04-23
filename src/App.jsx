@@ -330,7 +330,7 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
   
   const handleSaveAAR = async () => {
     setSavingAAR(true);
-    await onCompleteTraining(post.id, attendance, trainerNotes);
+    await onCompleteTraining(post.id, attendance, trainerNotes, post, currentUser.email);
     setSavingAAR(false);
     setShowAAR(false);
     onClose();
@@ -3507,7 +3507,7 @@ function App() {
     } catch (e) { showToast((t.error || 'Napaka') + ': ' + e.message, 'error'); }
   };
 
-  const handleCompleteTraining = async (eventId, attendance, notes) => {
+  const handleCompleteTraining = async (eventId, attendance, notes, postData, trainerEmail) => {
     try {
       const { error } = await supabase
         .from('posts')
@@ -3523,6 +3523,23 @@ function App() {
       if (error) throw error;
       loadPosts();
       showToast(t.trainingCompleted, 'success');
+
+      // Send report email via edge function (non-blocking)
+      try {
+        await supabase.functions.invoke('send-training-report', {
+          body: {
+            title: postData?.title,
+            date: postData?.date,
+            time: postData?.time,
+            location: postData?.location,
+            type: postData?.type,
+            trainerEmail: trainerEmail,
+            trainerName: postData?.trener || trainerEmail,
+            attendees: attendance.map(a => ({ email: a.email, name: a.name, present: a.present })),
+            notes: notes
+          }
+        });
+      } catch (emailErr) { /* email failure doesn't block the UI */ }
     } catch (e) { showToast((t.error || 'Napaka') + ': ' + e.message, 'error'); }
   };
 
@@ -6438,6 +6455,17 @@ function App() {
                   <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>Orožne listine</span>
                   {selectedMember.orozne_listine.map((l, i) => (
                     <div key={i} style={{ color: '#fff', fontSize: '13px', marginLeft: '12px', marginTop: '4px' }}>• {l.vrsta} — {l.stevilo}</div>
+                  ))}
+                </div>
+              )}
+              {memberApplicationData?.weapons && memberApplicationData.weapons.length > 0 && (
+                <div style={{ paddingTop: '8px' }}>
+                  <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>Orožje</span>
+                  {memberApplicationData.weapons.map((w, i) => (
+                    <div key={i} style={{ color: '#fff', fontSize: '13px', marginLeft: '12px', marginTop: '4px' }}>
+                      • {w.vrsta_orozja}{w.model_orozja ? ` — ${w.model_orozja}` : ''}
+                      {(w.kaliber || w.serijska_stevilka) && <span style={{ color: 'rgba(255,255,255,0.5)' }}> ({[w.kaliber, w.serijska_stevilka].filter(Boolean).join(', ')})</span>}
+                    </div>
                   ))}
                 </div>
               )}
