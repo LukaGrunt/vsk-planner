@@ -2359,10 +2359,7 @@ function App() {
           console.error('Session refresh error:', error);
           return;
         }
-        // If session exists, Supabase will auto-refresh if needed
-        if (session) {
-          await supabase.auth.setSession(session);
-        }
+        // getSession is enough — Supabase auto-refreshes via autoRefreshToken
       } catch (error) {
         console.error('Failed to refresh session:', error);
       }
@@ -2438,11 +2435,8 @@ function App() {
   // Listen for service worker updates - auto refresh when new version available
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('message', (event) => {
-        if (event.data?.type === 'CACHE_UPDATED') {
-          // New version available - reload to get latest
-          window.location.reload();
-        }
+      navigator.serviceWorker.addEventListener('message', (_event) => {
+        // CACHE_UPDATED received — new version will apply on next natural navigation
       });
       
       // Also check for waiting service worker and activate it
@@ -2506,14 +2500,19 @@ function App() {
     setCancelledTrainingAlert(null);
   };
 
-  // Auto-refresh when app becomes visible (comes back from background)
+  // Auto-refresh when app becomes visible after 5+ minutes in background
   useEffect(() => {
+    let hiddenAt = 0;
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && currentUser) {
-        loadPosts();
-        loadMembers();
-        loadPopups();
-        loadFeaturedArticle();
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now();
+      } else if (document.visibilityState === 'visible' && currentUser) {
+        if (Date.now() - hiddenAt > 5 * 60 * 1000) {
+          loadPosts();
+          loadMembers();
+          loadPopups();
+          loadFeaturedArticle();
+        }
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
