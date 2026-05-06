@@ -2831,8 +2831,8 @@ function App() {
 
         setPopups(formattedData);
         // Show active popup to user
-        const active = formattedData?.find(p => p.active && !dismissedPopups.includes(p.id));
-        if (active) setActivePopup(active);
+        const active = formattedData?.find(p => p.active && !dismissedPopups.includes(p.id)) || null;
+        setActivePopup(prev => (prev?.id === active?.id ? prev : active));
       });
     } catch (e) {
       // Failed to load popups - setting empty array
