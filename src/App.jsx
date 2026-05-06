@@ -2324,9 +2324,11 @@ function App() {
     initializeAuth();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         setCurrentUser(session.user);
+        // TOKEN_REFRESHED just updates the JWT — no need to reload profile or reset view
+        if (event === 'TOKEN_REFRESHED') return;
         try {
           await loadUserProfile(session.user);
         } catch (error) {
@@ -2562,9 +2564,9 @@ function App() {
       loadProfileData();
       loadPopups();
       loadFeaturedArticle();
-      loadMembers(); // Load members for all users (needed for role colors in chat)
+      loadMembers();
     }
-  }, [currentUser, userRole]);
+  }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
