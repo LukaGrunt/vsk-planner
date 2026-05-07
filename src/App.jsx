@@ -2278,7 +2278,7 @@ function App() {
     }, 15000); // 15 second timeout
 
     return () => clearTimeout(timeout);
-  }, [loading, connectionStatus]);
+  }, [loading]);
 
   // Initialize authentication (consolidated to prevent race conditions)
   useEffect(() => {
@@ -2326,20 +2326,25 @@ function App() {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Token refresh only updates the JWT — user identity and role haven't changed,
+      // so skip all state updates to avoid re-renders and effect cascade
+      if (event === 'TOKEN_REFRESHED') return;
+
       if (session?.user) {
         setCurrentUser(session.user);
-        // TOKEN_REFRESHED just updates the JWT — no need to reload profile or reset view
-        if (event === 'TOKEN_REFRESHED') return;
         try {
           await loadUserProfile(session.user);
         } catch (error) {
-          // If profile loading fails, still allow user to access the app
           console.error('Failed to load user profile:', error);
           setUserRole('user');
-          setView('news');
+          if (!viewInitialized.current) {
+            viewInitialized.current = true;
+            setView('news');
+          }
           setLoading(false);
         }
-      } else {
+      } else if (event === 'SIGNED_OUT') {
+        // Only fully reset on explicit logout — not on transient network blips
         viewInitialized.current = false;
         setCurrentUser(null);
         setUserRole(null);
@@ -2536,6 +2541,7 @@ function App() {
   useEffect(() => {
     if (currentUser) {
       loadPosts();
+      loadProfileData();
       loadMembers();
       loadPopups();
       loadFeaturedArticle();
@@ -2570,14 +2576,6 @@ function App() {
     }
   }, [view]);
 
-  useEffect(() => {
-    if (currentUser) {
-      loadProfileData();
-      loadPopups();
-      loadFeaturedArticle();
-      loadMembers();
-    }
-  }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
