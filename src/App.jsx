@@ -2190,6 +2190,7 @@ function App() {
   
   const chatContainerRef = useRef(null);
   const resultsRef = useRef(null);
+  const viewInitialized = useRef(false);
 
   // Scroll chat to bottom when messages change or when entering chat view
   useEffect(() => {
@@ -2339,6 +2340,7 @@ function App() {
           setLoading(false);
         }
       } else {
+        viewInitialized.current = false;
         setCurrentUser(null);
         setUserRole(null);
         setView('home');
@@ -2389,7 +2391,10 @@ function App() {
 
           if (data) {
             setUserRole(data.role || 'user');
-            setView(data.role === 'admin' || data.role === 'superadmin' ? 'admin-dashboard' : 'news');
+            if (!viewInitialized.current) {
+              viewInitialized.current = true;
+              setView(data.role === 'admin' || data.role === 'superadmin' ? 'admin-dashboard' : 'news');
+            }
 
             // Track login
             try {
@@ -2413,7 +2418,10 @@ function App() {
             }
           } else {
             setUserRole('user');
-            setView('news');
+            if (!viewInitialized.current) {
+              viewInitialized.current = true;
+              setView('news');
+            }
           }
         })(),
         timeoutPromise
@@ -2426,7 +2434,10 @@ function App() {
         tags: { error_type: 'profile_load_timeout' }
       });
       setUserRole('user');
-      setView('news');
+      if (!viewInitialized.current) {
+        viewInitialized.current = true;
+        setView('news');
+      }
     } finally {
       setLoading(false); // ALWAYS set loading to false
     }
