@@ -4735,7 +4735,7 @@ function App() {
           {userRole === 'superadmin' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
               <div style={{ ...glassCardStyle }}><div style={{ fontSize: '26px', fontWeight: '700', color: '#fff' }}>{members.length}</div><div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{t.membersCount}</div></div>
-              <div style={{ ...glassCardStyle }}><div style={{ fontSize: '26px', fontWeight: '700', color: '#10b981' }}>{members.filter(m => isPaidFor(m)).length}/{members.length}</div><div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{t.membershipStatus}</div></div>
+              <div style={{ ...glassCardStyle }}><div style={{ fontSize: '26px', fontWeight: '700', color: '#10b981' }}>{members.filter(m => isPaidFor(m)).length}/{members.length}</div><div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{t.membershipStatus} {currentYear()}</div></div>
             </div>
           )}
           <div style={{ display: 'grid', gap: '12px' }}>
