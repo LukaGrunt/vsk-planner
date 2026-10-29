@@ -167,6 +167,23 @@ const EVENT_COLORS = {
 const POSTS_PER_PAGE = 50;
 const MEMBERS_PER_PAGE = 100;
 
+// Membership fee is tracked per year. From this year on, unpaid members see a
+// reminder in Profil and coaches see a "neplačano" tag (2026 = first year, no reminders).
+const MEMBERSHIP_NOTICES_FROM_YEAR = 2027;
+// "?test-leto=2027" in the address shows the app as if it were that year (to preview
+// the new-year reminders). Display only; it doesn't change anyone's data or rights.
+const TEST_YEAR = (() => {
+  try {
+    const y = parseInt(new URLSearchParams(window.location.search).get('test-leto') || '', 10);
+    return y >= 2020 && y <= 2100 ? y : null;
+  } catch (e) { return null; }
+})();
+const currentYear = () => TEST_YEAR || new Date().getFullYear();
+
+const UnpaidTag = () => (
+  <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '20px', background: 'rgba(245, 158, 11, 0.18)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.35)', whiteSpace: 'nowrap' }}>neplačano</span>
+);
+
 // Fields in the PDF that's automatically attached to the "training finished" email.
 // Keys come from MEMBER_FIELDS in exports.js.
 const AUTO_REPORT_FIELDS = ['ime', 'mors', 'listine', 'orozje'];
@@ -338,7 +355,7 @@ const PoliceTape = () => (
 );
 
 // Event Detail Modal
-const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, profileData, userRole, onCompleteTraining, onCancelTraining, t, language, members, showToast }) => {
+const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, profileData, userRole, onCompleteTraining, onCancelTraining, t, language, members, showToast, isUnpaidEmail = () => false }) => {
   const eventConfig = EVENT_COLORS[post.type];
   const IconComponent = eventConfig?.icon || FileText;
   const currentRSVPs = post.rsvps || [];
@@ -525,7 +542,7 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
                     {person.present ? '✓' : ''}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ color: '#fff', fontSize: '14px', fontWeight: '500' }}>{person.name}{person.addedByCoach && <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: '400' }}> · dodan</span>}</div>
+                    <div style={{ color: '#fff', fontSize: '14px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>{person.name}{person.addedByCoach && <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: '400' }}>· dodan</span>}{isCoach && isUnpaidEmail(person.email) && <UnpaidTag />}</div>
                     <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}>{person.email}</div>
                   </div>
                   {person.role === 'vodja' && person.present ? (
@@ -955,8 +972,9 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
                             {p.name?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '?'}
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ color: '#fff', fontSize: '15px', fontWeight: '600' }}>
+                            <div style={{ color: '#fff', fontSize: '15px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                               {p.name || (t?.unknown || 'Neznan')}
+                              {isCoach && isUnpaidEmail(p.email) && <UnpaidTag />}
                             </div>
                           </div>
                           {p.userId === currentUser?.uid && (
@@ -1803,6 +1821,10 @@ function App() {
   const [memberListSearch, setMemberListSearch] = useState('');
   const [memberListFilter, setMemberListFilter] = useState('all'); // all | paid | unpaid | notLoggedIn
   const [adminExport, setAdminExport] = useState(null); // null | 'members' | 'period'
+  // Membership payments per year: Set of "memberId:year". null = not loaded / table missing (old yes/no field is used)
+  const [paymentKeys, setPaymentKeys] = useState(null);
+  const [membersYear, setMembersYear] = useState(() => currentYear());
+  const [ownMemberId, setOwnMemberId] = useState(null);
   const [loadingAllMembers, setLoadingAllMembers] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
   const [showCSVImport, setShowCSVImport] = useState(false);
@@ -2794,7 +2816,7 @@ function App() {
 
   // Members list depends on the role: full data for coaches, names only for everyone else
   useEffect(() => {
-    if (currentUserId && userRole) loadMembers();
+    if (currentUserId && userRole) { loadMembers(); loadPayments(); }
   }, [currentUserId, userRole]);
 
   // Offline detection
@@ -2897,6 +2919,7 @@ function App() {
           .maybeSingle();
 
         if (data) {
+          setOwnMemberId(data.id || null);
           setProfileData({
             ime: sanitizeInput(data.ime) || '',
             priimek: sanitizeInput(data.priimek) || '',
@@ -3096,7 +3119,8 @@ function App() {
       all.push(...data);
       if (data.length < CHUNK) break;
     }
-    return all.map(formatMember);
+    // "Članarina" in exports = paid for the current year
+    return all.map(formatMember).map(m => ({ ...m, membershipPaid: isPaidFor(m, currentYear()) }));
   };
 
   const fetchCompletedTrainingsForExport = async (period) => {
@@ -3118,7 +3142,7 @@ function App() {
 
   // Same search + chip filter as the Člani screen, for "export what I'm looking at"
   const applyMemberListFilters = (list) => {
-    const checks = { all: () => true, paid: m => m.membershipPaid, unpaid: m => !m.membershipPaid, notLoggedIn: m => !m.hasLoggedIn };
+    const checks = { all: () => true, paid: m => isPaidFor(m, membersYear), unpaid: m => !isPaidFor(m, membersYear), notLoggedIn: m => !m.hasLoggedIn };
     return list.filter(m => (checks[memberListFilter] || checks.all)(m) && memberMatchesSearch(m, memberListSearch));
   };
   const memberListFilterLabel = () => {
@@ -3624,21 +3648,63 @@ function App() {
     }
   };
 
-  const toggleMembershipStatus = async (id) => {
+  // Coaches get every payment (RLS), members only their own
+  const loadPayments = async () => {
+    try {
+      const { data, error } = await supabase.from('membership_payments').select('member_id, year');
+      if (error) throw error;
+      setPaymentKeys(new Set((data || []).map(p => `${p.member_id}:${p.year}`)));
+    } catch (e) {
+      setPaymentKeys(null); // table not created yet: fall back to the old yes/no field
+    }
+  };
+
+  const isPaidFor = (m, year = currentYear()) => {
+    if (!m) return false;
+    if (paymentKeys) return paymentKeys.has(`${m.id}:${year}`);
+    return year === currentYear() && !!m.membershipPaid;
+  };
+
+  // For the "neplačano" tag: only from MEMBERSHIP_NOTICES_FROM_YEAR, only for members we know
+  const isUnpaidEmail = (email) => {
+    if (currentYear() < MEMBERSHIP_NOTICES_FROM_YEAR || !paymentKeys || !email) return false;
+    const m = members.find(x => String(x.email || '').toLowerCase() === String(email).toLowerCase());
+    return !!m && !isPaidFor(m, currentYear());
+  };
+
+  // Only a superadmin may mark or unmark payments (the database enforces this too)
+  const toggleMembershipPayment = async (id, year = currentYear()) => {
+    if (actualRole !== 'superadmin') {
+      showToast('Plačilo članarine lahko spremeni samo super admin', 'error');
+      return;
+    }
     const m = members.find(x => x.id === id);
     if (!m) {
       showToast('Član ni najden', 'error');
       return;
     }
+    const name = `${m.ime || ''} ${m.priimek || ''}`.trim() || m.email;
+    const wasPaid = isPaidFor(m, year);
+    if (wasPaid && !window.confirm(`Odstranim plačilo članarine ${year} za ${name}?`)) return;
     try {
-      const { error } = await supabase
-        .from('members')
-        .update({ membership_paid: !m.membershipPaid })
-        .eq('id', id);
-
-      if (error) throw error;
-      loadMembers();
-      showToast(m.membershipPaid ? 'Označeno kot neplačano' : 'Označeno kot plačano', 'success');
+      if (paymentKeys) {
+        const { error } = wasPaid
+          ? await supabase.from('membership_payments').delete().eq('member_id', id).eq('year', year)
+          : await supabase.from('membership_payments').insert({ member_id: id, year });
+        if (error) throw error;
+        setPaymentKeys(prev => {
+          const next = new Set(prev || []);
+          if (wasPaid) next.delete(`${id}:${year}`); else next.add(`${id}:${year}`);
+          return next;
+        });
+      }
+      // Keep the old yes/no field in step for the current year
+      if (year === currentYear() || !paymentKeys) {
+        const { error } = await supabase.from('members').update({ membership_paid: !wasPaid }).eq('id', id);
+        if (error && !paymentKeys) throw error;
+        setMembers(prev => prev.map(x => (x.id === id ? { ...x, membershipPaid: !wasPaid } : x)));
+      }
+      showToast(wasPaid ? `${name}: članarina ${year} odstranjena` : `${name}: članarina ${year} plačana`, 'success');
     } catch (e) {
       console.error('Toggle membership error:', e);
       showToast('Napaka: ' + e.message, 'error');
@@ -4659,7 +4725,7 @@ function App() {
         />
       )}
 
-      {selectedEvent && <EventDetailModal post={selectedEvent} onClose={() => setSelectedEvent(null)} currentUser={currentUser} onRSVP={handleRSVP} onCancelRSVP={cancelRSVP} profileData={profileData} userRole={userRole} onCompleteTraining={handleCompleteTraining} onCancelTraining={handleCancelTraining} t={t} language={language} members={members} showToast={showToast} />}
+      {selectedEvent && <EventDetailModal post={selectedEvent} onClose={() => setSelectedEvent(null)} currentUser={currentUser} onRSVP={handleRSVP} onCancelRSVP={cancelRSVP} profileData={profileData} userRole={userRole} onCompleteTraining={handleCompleteTraining} onCancelTraining={handleCancelTraining} t={t} language={language} members={members} showToast={showToast} isUnpaidEmail={isUnpaidEmail} />}
 
       {view === 'admin-dashboard' && (userRole === 'admin' || userRole === 'superadmin') && (
         <div className="page-scroll">
@@ -4667,7 +4733,7 @@ function App() {
           {userRole === 'superadmin' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
               <div style={{ ...glassCardStyle }}><div style={{ fontSize: '26px', fontWeight: '700', color: '#fff' }}>{members.length}</div><div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{t.membersCount}</div></div>
-              <div style={{ ...glassCardStyle }}><div style={{ fontSize: '26px', fontWeight: '700', color: '#10b981' }}>{members.filter(m => m.membershipPaid).length}/{members.length}</div><div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{t.membershipStatus}</div></div>
+              <div style={{ ...glassCardStyle }}><div style={{ fontSize: '26px', fontWeight: '700', color: '#10b981' }}>{members.filter(m => isPaidFor(m)).length}/{members.length}</div><div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{t.membershipStatus}</div></div>
             </div>
           )}
           <div style={{ display: 'grid', gap: '12px' }}>
@@ -5042,11 +5108,11 @@ function App() {
           {(() => {
             const filterChecks = {
               all: () => true,
-              paid: m => m.membershipPaid,
-              unpaid: m => !m.membershipPaid,
+              paid: m => isPaidFor(m, membersYear),
+              unpaid: m => !isPaidFor(m, membersYear),
               notLoggedIn: m => !m.hasLoggedIn
             };
-            const filterLabels = { all: 'Vsi', paid: 'Plačano', unpaid: 'Ni plačano', notLoggedIn: 'Ni se prijavil' };
+            const filterLabels = { all: 'Vsi', paid: `Plačano ${membersYear}`, unpaid: `Ni plačano ${membersYear}`, notLoggedIn: 'Ni se prijavil' };
             const isFiltering = memberListSearch.trim() !== '' || memberListFilter !== 'all';
             const filteredMembers = members.filter(m => filterChecks[memberListFilter](m) && memberMatchesSearch(m, memberListSearch));
             return (
@@ -5092,6 +5158,23 @@ function App() {
                 );
               })}
             </div>
+            {paymentKeys && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
+                <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '12px', fontWeight: '600', marginRight: '2px' }}>Članarina za leto</span>
+                {[currentYear() - 1, currentYear(), currentYear() + 1].map(y => {
+                  const active = membersYear === y;
+                  return (
+                    <button key={y} onClick={() => setMembersYear(y)}
+                      style={{ padding: '5px 11px', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: active ? '1px solid rgba(16,185,129,0.6)' : '1px solid rgba(255,255,255,0.12)', background: active ? 'rgba(16,185,129,0.15)' : 'transparent', color: active ? '#fff' : 'rgba(255,255,255,0.55)' }}>
+                      {y}
+                    </button>
+                  );
+                })}
+                <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px', marginLeft: 'auto' }}>
+                  {members.filter(m => isPaidFor(m, membersYear)).length}/{members.length} plačano
+                </span>
+              </div>
+            )}
           </div>
           {isFiltering && !loadingAllMembers && filteredMembers.length === 0 && (
             <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.45)', fontSize: '14px', padding: '32px 0' }}>Ni zadetkov.</div>
@@ -5133,7 +5216,9 @@ function App() {
                 <select value={m.role || 'user'} onChange={(e) => changeRole(m.id, e.target.value)} style={{ padding: '6px 10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '12px' }}>
                   <option value="user">Član</option><option value="admin">Admin</option><option value="superadmin">Super Admin</option>
                 </select>
-                <button onClick={() => toggleMembershipStatus(m.id)} style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', fontSize: '12px', fontWeight: '600', cursor: 'pointer', background: m.membershipPaid ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)', color: m.membershipPaid ? '#10b981' : '#f59e0b' }}>{m.membershipPaid ? '✓ ' + t.paid : '✗ ' + t.notPaid}</button>
+                {(() => { const paid = isPaidFor(m, membersYear); return (
+                <button onClick={() => toggleMembershipPayment(m.id, membersYear)} title={`Članarina ${membersYear}`} style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', fontSize: '12px', fontWeight: '600', cursor: 'pointer', background: paid ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)', color: paid ? '#10b981' : '#f59e0b' }}>{paid ? '✓ ' + t.paid : '✗ ' + t.notPaid}{membersYear !== currentYear() ? ` ${membersYear}` : ''}</button>
+                ); })()}
               </div>
             </div>
           ))}
@@ -5611,6 +5696,15 @@ function App() {
       {view === 'profile' && (
         <div className="page-scroll">
           <div style={pageContentPadding}>
+          {currentYear() >= MEMBERSHIP_NOTICES_FROM_YEAR && paymentKeys && ownMemberId && !paymentKeys.has(`${ownMemberId}:${currentYear()}`) && (
+            <div style={{ ...glassCardStyle, padding: '14px 16px', marginBottom: '14px', border: '1px solid rgba(245, 158, 11, 0.4)', background: 'rgba(245, 158, 11, 0.12)', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+              <AlertCircle size={20} color="#f59e0b" style={{ flexShrink: 0, marginTop: '1px' }} />
+              <div>
+                <div style={{ color: '#fff', fontSize: '14px', fontWeight: '600', marginBottom: '2px' }}>Članarina {currentYear()} še ni plačana</div>
+                <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: '13px' }}>Navodila za plačilo ste prejeli po emailu.</div>
+              </div>
+            </div>
+          )}
           <div style={{ ...glassCardStyle, padding: '24px', marginBottom: '14px', overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' }}>
               <div style={{ width: '70px', height: '70px', borderRadius: '50%', background: ROLE_COLORS[userRole]?.gradient || ROLE_COLORS.user.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: '700', color: '#fff', boxShadow: `0 4px 20px ${ROLE_COLORS[userRole]?.bg || ROLE_COLORS.user.bg}44` }}>{getInitials()}</div>
@@ -7073,7 +7167,7 @@ function App() {
                 { label: 'MORS številka', value: selectedMember.morsStevilo },
                 { label: 'Konfekcijska številka (Majica)', value: selectedMember.konfekcijska_stevilka },
                 { label: 'Vloga', value: selectedMember.role },
-                { label: 'Članarina', value: selectedMember.membershipPaid ? 'Plačano' : 'Ni plačano' },
+                { label: `Članarina ${currentYear()}`, value: isPaidFor(selectedMember) ? 'Plačano' : 'Ni plačano' },
               ].filter(f => f.value).map(f => (
                 <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                   <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>{f.label}</span>
@@ -7130,6 +7224,17 @@ function App() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Reminder while previewing another year with ?test-leto= */}
+      {TEST_YEAR && (
+        <div style={{
+          position: 'fixed', top: `calc(${actualRole === 'superadmin' && viewAsRole ? 48 : 8}px + env(safe-area-inset-top, 0px))`, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 1200, background: 'rgba(59, 130, 246, 0.95)', color: '#fff', borderRadius: '999px',
+          padding: '6px 14px', fontSize: '12px', fontWeight: '700', boxShadow: '0 4px 16px rgba(0,0,0,0.4)', whiteSpace: 'nowrap'
+        }}>
+          Testni prikaz: leto {TEST_YEAR}
         </div>
       )}
 
