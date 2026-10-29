@@ -3828,7 +3828,7 @@ function App() {
   // Export backup of all data to JSON file
   const handleExportBackup = async () => {
     // Permission check: only admins and superadmins can export
-    if (userRole !== 'admin' && userRole !== 'superadmin') {
+    if (userRole !== 'superadmin') {
       showToast(t.permissionDenied || 'Nimate dovoljenja', 'error');
       return;
     }
@@ -3837,29 +3837,30 @@ function App() {
       showToast('Pripravljam varnostno kopijo...', 'info');
 
       // Fetch all data from Supabase
-      const [postsResult, membersResult, messagesResult, settingsResult] = await Promise.all([
-        supabase.from('posts').select('*'),
-        supabase.from('members').select('*'),
-        supabase.from('messages').select('*'),
-        supabase.from('settings').select('*')
-      ]);
+      // Every table the app uses. Read in chunks so nothing is cut off at 1000 rows;
+      // a table that doesn't exist (yet) is skipped instead of failing the backup.
+      const TABLES = ['posts', 'members', 'membership_applications', 'membership_payments', 'messages', 'popups', 'settings'];
+      const readAll = async (table) => {
+        const rows = [];
+        for (let from = 0; ; from += 1000) {
+          const { data, error } = await supabase.from(table).select('*').range(from, from + 999);
+          if (error) return { data: null, error: error.message };
+          rows.push(...data);
+          if (data.length < 1000) break;
+        }
+        return { data: rows, error: null };
+      };
+      const results = Object.fromEntries(await Promise.all(TABLES.map(async (tbl) => [tbl, await readAll(tbl)])));
+      const failed = TABLES.filter(tbl => results[tbl].error);
 
       const backup = {
         exportDate: new Date().toISOString(),
         exportBy: currentUser.email,
-        version: '2.0',
+        version: '3.0',
         database: 'supabase',
-        data: {
-          posts: postsResult.data || [],
-          members: membersResult.data || [],
-          messages: messagesResult.data || [],
-          settings: settingsResult.data || []
-        },
-        stats: {
-          postsCount: postsResult.data?.length || 0,
-          membersCount: membersResult.data?.length || 0,
-          messagesCount: messagesResult.data?.length || 0
-        }
+        data: Object.fromEntries(TABLES.map(tbl => [tbl, results[tbl].data || []])),
+        stats: Object.fromEntries(TABLES.map(tbl => [`${tbl}Count`, results[tbl].data?.length || 0])),
+        skippedTables: Object.fromEntries(failed.map(tbl => [tbl, results[tbl].error]))
       };
 
       // Create downloadable file
@@ -3873,7 +3874,9 @@ function App() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      showToast('Varnostna kopija prenesena!', 'success');
+      const total = TABLES.reduce((sum, tbl) => sum + (results[tbl].data?.length || 0), 0);
+      if (failed.length) showToast(`Kopija prenesena (${total} zapisov), brez: ${failed.join(', ')}`, 'info');
+      else showToast(`Varnostna kopija prenesena: ${total} zapisov iz ${TABLES.length} tabel`, 'success');
     } catch (error) {
       showToast('Napaka pri izvozu: ' + error.message, 'error');
     }
