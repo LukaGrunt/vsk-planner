@@ -187,7 +187,7 @@ Deno.serve(async (req) => {
 
     async function getMemberProfile(email: string): Promise<MemberProfile> {
       const [{ data: member }, { data: app }] = await Promise.all([
-        supabase.from('members').select('ime, priimek, mors_stevilo, orozne_listine').eq('email', email).maybeSingle(),
+        supabase.from('members').select('*').eq('email', email).maybeSingle(),
         supabase.from('membership_applications').select('weapons').eq('email', email).maybeSingle(),
       ])
       const name = member
@@ -199,7 +199,7 @@ Deno.serve(async (req) => {
         orozneListine: Array.isArray(member?.orozne_listine)
           ? member.orozne_listine.filter((l: License) => l.vrsta || l.stevilo)
           : [],
-        weapons: Array.isArray(app?.weapons) ? app.weapons : [],
+        weapons: Array.isArray(member?.orozje) && member.orozje.length > 0 ? member.orozje : (Array.isArray(app?.weapons) ? app.weapons : []),
       }
     }
 
@@ -210,7 +210,7 @@ Deno.serve(async (req) => {
       const priimek = parts.slice(1).join(' ')
       const { data: member } = await supabase
         .from('members')
-        .select('email, ime, priimek, mors_stevilo, orozne_listine')
+        .select('*')
         .eq('ime', ime)
         .eq('priimek', priimek)
         .maybeSingle()
@@ -226,7 +226,7 @@ Deno.serve(async (req) => {
         orozneListine: Array.isArray(member.orozne_listine)
           ? member.orozne_listine.filter((l: License) => l.vrsta || l.stevilo)
           : [],
-        weapons: Array.isArray(app?.weapons) ? app.weapons : [],
+        weapons: Array.isArray(member.orozje) && member.orozje.length > 0 ? member.orozje : (Array.isArray(app?.weapons) ? app.weapons : []),
       }
     }
 
