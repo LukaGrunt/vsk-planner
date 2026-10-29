@@ -167,6 +167,10 @@ const EVENT_COLORS = {
 const POSTS_PER_PAGE = 50;
 const MEMBERS_PER_PAGE = 100;
 
+// Fields in the PDF that's automatically attached to the "training finished" email.
+// Keys come from MEMBER_FIELDS in exports.js.
+const AUTO_REPORT_FIELDS = ['ime', 'mors', 'listine', 'orozje'];
+
 // Convert a Supabase member row (snake_case) to the camelCase shape the UI uses
 const formatMember = (m) => ({
   ...m,
@@ -3900,13 +3904,14 @@ function App() {
       (async () => {
         let attachment = null;
         try {
+          const weaponsByEmail = fieldsNeedWeapons(AUTO_REPORT_FIELDS) ? await loadWeaponsByEmail(supabase) : {};
           const report = buildTrainingReport({
             post: { ...postData, attendance, trainerNotes: notes },
             members,
-            fieldKeys: ['ime', 'mors'],
+            fieldKeys: AUTO_REPORT_FIELDS,
             scope: 'all',
             signature: false,
-            ctx: {}
+            ctx: { weaponsByEmail }
           });
           const file = await makeExportFile(report, 'pdf');
           attachment = { filename: file.filename, content: await blobToBase64(file.blob) };
