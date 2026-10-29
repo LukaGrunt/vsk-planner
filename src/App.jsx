@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Sentry from '@sentry/react';
-import { supabase } from './supabaseClient';
+import { supabase, authUrlState } from './supabaseClient';
 import { Calendar, Target, User, Users, FileText, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Edit2, Trash2, X, BarChart3, Trophy, Volume2, Send, Upload, Check, AlertCircle, Link, ExternalLink, Timer, UserPlus, RotateCcw, Download } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
@@ -1633,6 +1633,12 @@ function App() {
   // Tracks which user is already loaded, so Supabase's repeated SIGNED_IN events
   // (fired every time the tab/app regains focus) don't trigger a full reload
   const currentUserIdRef = useRef(null);
+  // Password reset: user arrived from the "reset password" email link
+  const [passwordRecoveryMode, setPasswordRecoveryMode] = useState(authUrlState.isRecovery && !authUrlState.errorCode);
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryPasswordConfirm, setRecoveryPasswordConfirm] = useState('');
+  const [recoverySaving, setRecoverySaving] = useState(false);
+  const [forgotSending, setForgotSending] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [featuredArticle, setFeaturedArticle] = useState(null);
@@ -2342,8 +2348,11 @@ function App() {
       // Supabase re-emits SIGNED_IN on every tab/app refocus with a fresh user object.
       // Same user = nothing changed, so don't touch state (that caused the "blink"
       // and wiped half-filled forms by re-running every data load).
+      // Reset-password link: show the "set new password" screen (must run before the
+      // same-user guard below, which would otherwise swallow this event)
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecoveryMode(true);
       if (event === 'INITIAL_SESSION' && !session) return;
-      if (session?.user && session.user.id === currentUserIdRef.current && event !== 'USER_UPDATED') return;
+      if (session?.user && session.user.id === currentUserIdRef.current && event !== 'USER_UPDATED' && event !== 'PASSWORD_RECOVERY') return;
 
       if (session?.user) {
         currentUserIdRef.current = session.user.id;
@@ -2371,6 +2380,15 @@ function App() {
     });
 
     return () => subscription.unsubscribe();
+  }, []);
+
+  // Reset link that was expired or already used (email scanners sometimes "click" it first)
+  useEffect(() => {
+    if (!authUrlState.errorCode) return;
+    showToast(language === 'en'
+      ? 'This reset link has expired or was already used. Enter your email and request a new one.'
+      : 'Povezava je potekla ali je bila že uporabljena. Vpiši email in zahtevaj novo.', 'error');
+    try { window.history.replaceState(null, '', window.location.pathname); } catch (e) { /* ignore */ }
   }, []);
 
   // Keep session alive - refresh token periodically
@@ -3048,12 +3066,75 @@ function App() {
   };
 
   const handleForgotPassword = async () => {
-    if (!loginEmail) { showToast(t.enterEmail, 'error'); return; }
+    const email = loginEmail.trim().toLowerCase();
+    if (!email) {
+      showToast(language === 'en' ? 'Enter your email above first' : 'Najprej zgoraj vpiši svoj email', 'error');
+      return;
+    }
+    if (forgotSending) return;
+    setForgotSending(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(loginEmail);
+      // Without redirectTo Supabase sends people to the project's "Site URL",
+      // which may not be the live app. Send them straight back here.
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/`
+      });
       if (error) throw error;
-      showToast(t.emailSent, 'success');
-    } catch (e) { showToast(t.error + ': ' + e.message, 'error'); }
+      showToast(language === 'en'
+        ? 'Reset link sent. Check your inbox and spam folder.'
+        : 'Povezava za ponastavitev je poslana. Preveri prejeto in vsiljeno pošto.', 'success');
+    } catch (e) {
+      const msg = (e?.message || '').toLowerCase();
+      if (e?.status === 429 || msg.includes('rate limit') || msg.includes('security purposes')) {
+        showToast(language === 'en'
+          ? 'Too many requests. Wait a few minutes and try again.'
+          : 'Preveč zahtev. Počakaj nekaj minut in poskusi znova.', 'error');
+      } else {
+        showToast(t.error + ': ' + e.message, 'error');
+      }
+      Sentry.captureException(e, { tags: { error_type: 'password_reset_request' } });
+    } finally {
+      setForgotSending(false);
+    }
+  };
+
+  const clearAuthParamsFromUrl = () => {
+    try { window.history.replaceState(null, '', window.location.pathname); } catch (e) { /* ignore */ }
+  };
+
+  const handleSetNewPassword = async () => {
+    if (recoveryPassword.length < 7) {
+      showToast(language === 'en' ? 'Password must be at least 7 characters' : 'Geslo mora imeti vsaj 7 znakov', 'error');
+      return;
+    }
+    if (recoveryPassword !== recoveryPasswordConfirm) {
+      showToast(language === 'en' ? 'Passwords do not match' : 'Gesli se ne ujemata', 'error');
+      return;
+    }
+    setRecoverySaving(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: recoveryPassword });
+      if (error) throw error;
+      setPasswordRecoveryMode(false);
+      setRecoveryPassword('');
+      setRecoveryPasswordConfirm('');
+      clearAuthParamsFromUrl();
+      showToast(language === 'en' ? 'New password saved' : 'Novo geslo je shranjeno', 'success');
+    } catch (e) {
+      const msg = (e?.message || '').toLowerCase();
+      if (msg.includes('different from the old')) {
+        showToast(language === 'en' ? 'New password must be different from the old one' : 'Novo geslo mora biti drugačno od starega', 'error');
+      } else if (msg.includes('session') || e?.status === 401 || e?.status === 403) {
+        showToast(language === 'en' ? 'Reset link expired. Request a new one.' : 'Povezava je potekla. Zahtevaj novo.', 'error');
+        setPasswordRecoveryMode(false);
+        await supabase.auth.signOut();
+      } else {
+        showToast(t.error + ': ' + e.message, 'error');
+      }
+      Sentry.captureException(e, { tags: { error_type: 'password_reset_update' } });
+    } finally {
+      setRecoverySaving(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -3874,6 +3955,34 @@ function App() {
     </div>
   );
 
+  // "Set new password" screen after opening the reset link from email
+  if (passwordRecoveryMode && currentUser) {
+    const recoveryInputStyle = { width: '100%', padding: '16px 18px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff', fontSize: '16px', boxSizing: 'border-box', outline: 'none' };
+    return (
+      <div style={{ minHeight: '100vh', background: 'radial-gradient(ellipse at center, #1a1a1a 0%, #0a0b0c 70%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+        <div style={{ width: '100%', maxWidth: '380px', ...glassStyle, borderRadius: '24px', padding: '40px 32px' }}>
+          <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+            <img src="/icon-512.png" alt="VSK" style={{ height: '70px', marginBottom: '20px' }} />
+            <h1 style={{ color: '#fff', fontSize: '22px', fontWeight: '700', marginBottom: '8px' }}>{language === 'en' ? 'Set a new password' : 'Nastavi novo geslo'}</h1>
+            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>{currentUser.email}</p>
+          </div>
+          <div style={{ display: 'grid', gap: '14px' }}>
+            <input type="password" autoComplete="new-password" autoFocus value={recoveryPassword} onChange={(e) => setRecoveryPassword(e.target.value)} placeholder={t.newPasswordMin} style={recoveryInputStyle} />
+            <input type="password" autoComplete="new-password" value={recoveryPasswordConfirm} onChange={(e) => setRecoveryPasswordConfirm(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSetNewPassword()} placeholder={language === 'en' ? 'Repeat new password' : 'Ponovi novo geslo'} style={recoveryInputStyle} />
+          </div>
+          <button onClick={handleSetNewPassword} disabled={recoverySaving || !recoveryPassword || !recoveryPasswordConfirm}
+            style={{ width: '100%', marginTop: '24px', background: 'linear-gradient(135deg, #c1372a 0%, #9a2c22 100%)', color: '#fff', padding: '16px', border: 'none', borderRadius: '12px', fontSize: '16px', fontWeight: '600', cursor: recoverySaving ? 'wait' : 'pointer', opacity: recoverySaving || !recoveryPassword || !recoveryPasswordConfirm ? 0.6 : 1 }}>
+            {recoverySaving ? t.loading : (language === 'en' ? 'Save password' : 'Shrani geslo')}
+          </button>
+          <button onClick={async () => { setPasswordRecoveryMode(false); clearAuthParamsFromUrl(); await supabase.auth.signOut(); }}
+            style={{ width: '100%', background: 'transparent', color: 'rgba(255,255,255,0.5)', padding: '12px', border: 'none', fontSize: '13px', cursor: 'pointer', marginTop: '8px' }}>
+            {language === 'en' ? 'Cancel' : 'Prekliči'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Login screen with animation
   if (!currentUser) {
     return (
@@ -4004,6 +4113,7 @@ function App() {
 
           <button 
             onClick={handleForgotPassword} 
+            disabled={forgotSending}
             style={{
               width: '100%',
               background: 'transparent',
@@ -4015,7 +4125,7 @@ function App() {
               marginTop: '8px'
             }}
           >
-            {t.forgotPassword}
+            {forgotSending ? t.loading : t.forgotPassword}
           </button>
         </div>
       </div>
