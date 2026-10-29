@@ -170,6 +170,8 @@ const MEMBERS_PER_PAGE = 100;
 // Membership fee is tracked per year. From this year on, unpaid members see a
 // reminder in Profil and coaches see a "neplačano" tag (2026 = first year, no reminders).
 const MEMBERSHIP_NOTICES_FROM_YEAR = 2027;
+// The app started in 2026: no earlier years to show
+const FIRST_MEMBERSHIP_YEAR = 2026;
 // "?test-leto=2027" in the address shows the app as if it were that year (to preview
 // the new-year reminders). Display only; it doesn't change anyone's data or rights.
 const TEST_YEAR = (() => {
@@ -5161,7 +5163,7 @@ function App() {
             {paymentKeys && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
                 <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '12px', fontWeight: '600', marginRight: '2px' }}>Članarina za leto</span>
-                {[currentYear() - 1, currentYear(), currentYear() + 1].map(y => {
+                {[currentYear() - 1, currentYear(), currentYear() + 1].filter(y => y >= FIRST_MEMBERSHIP_YEAR).map(y => {
                   const active = membersYear === y;
                   return (
                     <button key={y} onClick={() => setMembersYear(y)}
