@@ -4,7 +4,7 @@ import { supabase, authUrlState } from './supabaseClient';
 import { Calendar, Target, User, Users, FileText, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Edit2, Trash2, X, BarChart3, Trophy, Volume2, Send, Upload, Check, AlertCircle, Link, ExternalLink, Timer, UserPlus, RotateCcw, Download, Search } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import ExportModal from './ExportModal';
-import { MEMBER_FIELDS, buildMembersReport, buildTrainingReport, buildPeriodReport, fieldsNeedWeapons, loadWeaponsByEmail, makeExportFile, blobToBase64 } from './exports';
+import { MEMBER_FIELDS, buildMembersReport, buildTrainingReport, buildPeriodReport, fieldsNeedWeapons, loadWeaponsByEmail, makeExportFile, blobToBase64, personKey } from './exports';
 
 // Initialize Sentry for error monitoring
 Sentry.init({
@@ -414,9 +414,14 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
       supabase={supabase}
       showToast={showToast}
       onClose={() => setExportPost(null)}
-      buildReport={async ({ scope, fieldKeys, signature }) => {
+      loadPeople={async () => (exportPost.attendance || []).map(p => ({
+        key: personKey(p),
+        name: p.name || p.email,
+        sub: p.role === 'vodja' ? 'Vodja' : p.present ? 'Prisoten' : 'Odsoten'
+      }))}
+      buildReport={async ({ scope, fieldKeys, signature, picked }) => {
         const weaponsByEmail = fieldsNeedWeapons(fieldKeys) ? await loadWeaponsByEmail(supabase) : {};
-        return buildTrainingReport({ post: exportPost, members, fieldKeys, scope, signature, ctx: { weaponsByEmail } });
+        return buildTrainingReport({ post: exportPost, members, fieldKeys, scope, signature, picked, ctx: { weaponsByEmail } });
       }}
     />
   );
@@ -3058,6 +3063,14 @@ function App() {
     return (data || []).map(transformPost);
   };
 
+  // People list for "Izberi osebe" in member/period exports
+  const loadMemberPeopleForExport = async () => {
+    const list = await fetchAllMembersForExport();
+    return list
+      .map(m => ({ key: personKey(m), name: `${m.ime || ''} ${m.priimek || ''}`.trim() || m.email, sub: m.email || '' }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'sl'));
+  };
+
   // Same search + chip filter as the Člani screen, for "export what I'm looking at"
   const applyMemberListFilters = (list) => {
     const checks = { all: () => true, paid: m => m.membershipPaid, unpaid: m => !m.membershipPaid, notLoggedIn: m => !m.hasLoggedIn };
@@ -4547,12 +4560,13 @@ function App() {
           supabase={supabase}
           showToast={showToast}
           onClose={() => setAdminExport(null)}
-          buildReport={async ({ scope, fieldKeys, period }) => {
+          loadPeople={loadMemberPeopleForExport}
+          buildReport={async ({ scope, fieldKeys, period, picked }) => {
             let list = await fetchAllMembersForExport();
             if (scope === 'filtered') list = applyMemberListFilters(list);
             const trainings = fieldKeys.includes('prisotnost') ? await fetchCompletedTrainingsForExport(period) : [];
             const weaponsByEmail = fieldsNeedWeapons(fieldKeys) ? await loadWeaponsByEmail(supabase) : {};
-            return buildMembersReport({ members: list, posts: trainings, fieldKeys, scope, period, ctx: { weaponsByEmail }, filterLabel: memberListFilterLabel() });
+            return buildMembersReport({ members: list, posts: trainings, fieldKeys, scope, period, picked, ctx: { weaponsByEmail }, filterLabel: memberListFilterLabel() });
           }}
         />
       )}
@@ -4567,10 +4581,11 @@ function App() {
           supabase={supabase}
           showToast={showToast}
           onClose={() => setAdminExport(null)}
-          buildReport={async ({ scope, fieldKeys, period }) => {
+          loadPeople={loadMemberPeopleForExport}
+          buildReport={async ({ scope, fieldKeys, period, picked }) => {
             const [list, trainings] = await Promise.all([fetchAllMembersForExport(), fetchCompletedTrainingsForExport(period)]);
             const weaponsByEmail = fieldsNeedWeapons(fieldKeys) ? await loadWeaponsByEmail(supabase) : {};
-            return buildPeriodReport({ posts: trainings, members: list, fieldKeys, scope, period, ctx: { weaponsByEmail } });
+            return buildPeriodReport({ posts: trainings, members: list, fieldKeys, scope, period, picked, ctx: { weaponsByEmail } });
           }}
         />
       )}

@@ -72,6 +72,9 @@ export const loadWeaponsByEmail = async (supabase) => {
 
 const pickFields = (keys) => MEMBER_FIELDS.filter(f => keys.includes(f.key));
 
+// Stable key for a member or attendee, used by "Izberi osebe"
+export const personKey = (p) => (lower(p?.email) ? lower(p.email) : `ime:${lower(p?.name || fullName(p))}`);
+
 const leaderName = (tr) => tr.trener || (tr.attendance || []).find(a => a.role === 'vodja')?.name || '';
 const statusLabel = (p) => (p.role === 'vodja' ? (p.present ? 'Vodja' : 'Vodja (odsoten)') : p.present ? 'Prisoten' : 'Odsoten');
 // Leader first, then alphabetical
@@ -105,12 +108,13 @@ const periodLabel = (from, to) => {
 // Report builders → { title, meta: [string], columns: [{label,width}], rows: [[string]], filenameBase }
 // --------------------------------------------
 
-export const buildMembersReport = ({ members, posts, fieldKeys, scope, period, ctx, filterLabel }) => {
+export const buildMembersReport = ({ members, posts, fieldKeys, scope, period, ctx, filterLabel, picked }) => {
   const fields = pickFields(fieldKeys);
   const withAttendance = fieldKeys.includes('prisotnost');
   let list = [...(members || [])];
   if (scope === 'paid') list = list.filter(m => m.membershipPaid);
   if (scope === 'unpaid') list = list.filter(m => !m.membershipPaid);
+  if (scope === 'picked') list = list.filter(m => (picked || []).includes(personKey(m)));
   list.sort((a, b) => fullName(a).localeCompare(fullName(b), 'sl'));
 
   let counts = {};
@@ -134,27 +138,29 @@ export const buildMembersReport = ({ members, posts, fieldKeys, scope, period, c
     return row;
   });
 
-  const scopeLabel = { all: 'Vsi člani', paid: 'Plačana članarina', unpaid: 'Neplačana članarina', filtered: filterLabel || 'Trenutni filter' }[scope] || 'Vsi člani';
+  const scopeLabel = { all: 'Vsi člani', paid: 'Plačana članarina', unpaid: 'Neplačana članarina', filtered: filterLabel || 'Trenutni filter', picked: 'Izbrani člani' }[scope] || 'Vsi člani';
   const meta = [`${scopeLabel} · število članov: ${rows.length}`, `Izvoženo: ${formatSiDateTime(new Date())}`];
   if (withAttendance) meta.splice(1, 0, `Prisotnost: ${periodLabel(period?.from, period?.to)} · zaključeni treningi: ${trainingsCount}`);
 
   return { title: 'VSK – Seznam članov', meta, columns, rows, filenameBase: `VSK_clani_${todayIso()}` };
 };
 
-export const buildTrainingReport = ({ post, members, fieldKeys, scope, signature, ctx }) => {
+export const buildTrainingReport = ({ post, members, fieldKeys, scope, signature, ctx, picked }) => {
   const fields = pickFields(fieldKeys);
   let people = [...(post.attendance || [])];
   if (scope === 'present') people = people.filter(p => p.present);
+  if (scope === 'picked') people = people.filter(p => (picked || []).includes(personKey(p)));
+  const withStatus = scope === 'all' || scope === 'picked';
   people.sort(byLeaderThenName);
 
   const columns = [{ label: '#', width: 4 }, ...fields.map(f => ({ label: f.label, width: f.width }))];
-  if (scope === 'all') columns.push({ label: 'Status', width: 10 });
+  if (withStatus) columns.push({ label: 'Status', width: 10 });
   if (signature) columns.push({ label: 'Podpis', width: 20 });
 
   const rows = people.map((p, i) => {
     const m = findMember(members, p) || { ime: p.name || '', priimek: '', email: p.email };
     const row = [String(i + 1), ...fields.map(f => (f.key === 'ime' ? (fullName(m) || p.name || p.email || '') : f.get(m, ctx)))];
-    if (scope === 'all') row.push(statusLabel(p));
+    if (withStatus) row.push(statusLabel(p));
     else if (p.role === 'vodja' && fields[0]?.key === 'ime') row[1] = `${row[1]} (vodja)`;
     if (signature) row.push('');
     return row;
@@ -172,7 +178,7 @@ export const buildTrainingReport = ({ post, members, fieldKeys, scope, signature
   return { title: post.title || 'Trening', meta, columns, rows, filenameBase: `VSK_${safeTitle}_${post.date || todayIso()}` };
 };
 
-export const buildPeriodReport = ({ posts, members, fieldKeys, scope, period, ctx }) => {
+export const buildPeriodReport = ({ posts, members, fieldKeys, scope, period, ctx, picked }) => {
   const fields = pickFields(fieldKeys);
   const trainings = completedTrainingsIn(posts, period?.from, period?.to);
   const columns = [
@@ -181,17 +187,18 @@ export const buildPeriodReport = ({ posts, members, fieldKeys, scope, period, ct
     { label: 'Trener', width: 16 },
     ...fields.map(f => ({ label: f.label, width: f.width }))
   ];
-  if (scope === 'all') columns.push({ label: 'Status', width: 10 });
+  const withStatus = scope === 'all' || scope === 'picked';
+  if (withStatus) columns.push({ label: 'Status', width: 10 });
 
   const rows = [];
   trainings.forEach(tr => {
     [...tr.attendance]
-      .filter(p => scope === 'all' || p.present)
+      .filter(p => (scope === 'picked' ? (picked || []).includes(personKey(p)) : scope === 'all' || p.present))
       .sort(byLeaderThenName)
       .forEach(p => {
         const m = findMember(members, p) || { ime: p.name || '', priimek: '', email: p.email };
         const row = [formatSiDate(tr.date), tr.title || '', leaderName(tr), ...fields.map(f => (f.key === 'ime' ? (fullName(m) || p.name || p.email || '') : f.get(m, ctx)))];
-        if (scope === 'all') row.push(statusLabel(p));
+        if (withStatus) row.push(statusLabel(p));
         rows.push(row);
       });
   });
@@ -199,8 +206,9 @@ export const buildPeriodReport = ({ posts, members, fieldKeys, scope, period, ct
   const meta = [
     `Obdobje: ${periodLabel(period?.from, period?.to)}`,
     `Zaključeni treningi: ${trainings.length} · vpisov: ${rows.length}`,
+    scope === 'picked' ? `Izbrane osebe: ${(picked || []).length}` : null,
     `Izvoženo: ${formatSiDateTime(new Date())}`
-  ];
+  ].filter(Boolean);
   const suffix = period?.from || period?.to ? `${period?.from || 'zacetek'}_${period?.to || todayIso()}` : todayIso();
   return { title: 'VSK – Poročilo prisotnosti', meta, columns, rows, filenameBase: `VSK_prisotnost_${suffix}` };
 };

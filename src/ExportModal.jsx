@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Download, Send, Upload, Check } from 'lucide-react';
+import { X, Download, Send, Upload, Check, Search } from 'lucide-react';
 import { makeExportFile, canShareFiles, shareFile, downloadFile, emailFile, preloadExportLibs, EXPORT_EMAIL_RECIPIENT } from './exports';
 
 // Shared "Izvoz" box used for members, single-training and period exports.
@@ -13,6 +13,8 @@ import { makeExportFile, canShareFiles, shareFile, downloadFile, emailFile, prel
 //   showPeriod          – show from/to date inputs
 //   periodRequiredFor   – field key that needs the period (e.g. 'prisotnost'); null = always shown when showPeriod
 //   allowSignature      – PDF signature column toggle
+//   loadPeople()        – optional, async → [{ key, name, sub }]; adds an "Izberi osebe" option
+//                         and passes the chosen keys to buildReport as `picked` (scope 'picked')
 //   buildReport(options) – async, returns a report object from exports.js
 //   supabase, showToast, onClose
 
@@ -25,10 +27,18 @@ const writeSaved = (key, value) => {
 
 const thisYear = new Date().getFullYear();
 
-const ExportModal = ({ title, subtitle, storageKey, scopes, fields, showPeriod, periodRequiredFor = null, allowSignature, buildReport, supabase, showToast, onClose }) => {
+const normalize = (str) => String(str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+const ExportModal = ({ title, subtitle, storageKey, scopes: baseScopes, fields, showPeriod, periodRequiredFor = null, allowSignature, loadPeople, buildReport, supabase, showToast, onClose }) => {
   const saved = readSaved(storageKey) || {};
+  const scopes = loadPeople ? [...baseScopes, { value: 'picked', label: 'Izberi osebe' }] : baseScopes;
   const fieldKeys = fields.map(f => f.key);
-  const [scope, setScope] = useState(scopes.some(s => s.value === saved.scope) ? saved.scope : scopes[0].value);
+  const [scope, setScope] = useState(saved.scope !== 'picked' && scopes.some(s => s.value === saved.scope) ? saved.scope : scopes[0].value);
+  // "Izberi osebe": list of people to choose from, loaded the first time it's opened
+  const [people, setPeople] = useState(null);
+  const [peopleLoading, setPeopleLoading] = useState(false);
+  const [peopleQuery, setPeopleQuery] = useState('');
+  const [picked, setPicked] = useState([]);
   const [selected, setSelected] = useState(() => {
     const fromSaved = Array.isArray(saved.fields) ? saved.fields.filter(k => fieldKeys.includes(k)) : null;
     return fromSaved && fromSaved.length ? fromSaved : fields.filter(f => f.default).map(f => f.key);
@@ -44,6 +54,21 @@ const ExportModal = ({ title, subtitle, storageKey, scopes, fields, showPeriod, 
 
   useEffect(() => { preloadExportLibs(); }, []);
 
+  useEffect(() => {
+    if (scope !== 'picked' || people || peopleLoading || !loadPeople) return;
+    setPeopleLoading(true);
+    loadPeople()
+      .then(list => setPeople(Array.isArray(list) ? list : []))
+      .catch(() => { setPeople([]); showToast('Seznama oseb ni bilo mogoče naložiti', 'error'); })
+      .finally(() => setPeopleLoading(false));
+  }, [scope]);
+
+  const togglePerson = (key) => setPicked(prev => (prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]));
+  const visiblePeople = (people || []).filter(p => {
+    const q = normalize(peopleQuery).trim();
+    return !q || q.split(/\s+/).every(w => normalize(`${p.name} ${p.sub || ''}`).includes(w));
+  });
+
   const allSelected = selected.length === fields.length;
   const toggleField = (key) => setSelected(prev => (prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]));
   const periodVisible = showPeriod && (!periodRequiredFor || selected.includes(periodRequiredFor));
@@ -53,13 +78,17 @@ const ExportModal = ({ title, subtitle, storageKey, scopes, fields, showPeriod, 
       showToast('Izberi vsaj en podatek za izvoz', 'error');
       return;
     }
+    if (scope === 'picked' && picked.length === 0) {
+      showToast('Izberi vsaj eno osebo', 'error');
+      return;
+    }
     if (periodVisible && from && to && from > to) {
       showToast('Datum "od" mora biti pred datumom "do"', 'error');
       return;
     }
     const orderedKeys = fieldKeys.filter(k => selected.includes(k));
     const useSignature = allowSignature && format === 'pdf' && signature;
-    const optionsKey = JSON.stringify({ scope, orderedKeys, format, useSignature, from: periodVisible ? from : null, to: periodVisible ? to : null });
+    const optionsKey = JSON.stringify({ scope, picked: scope === 'picked' ? [...picked].sort() : null, orderedKeys, format, useSignature, from: periodVisible ? from : null, to: periodVisible ? to : null });
 
     // Already prepared with the same options: share straight away, still inside the tap
     if (action === 'share' && preparedRef.current.key === optionsKey) {
@@ -76,6 +105,7 @@ const ExportModal = ({ title, subtitle, storageKey, scopes, fields, showPeriod, 
     try {
       const report = await buildReport({
         scope,
+        picked: scope === 'picked' ? picked : null,
         fieldKeys: orderedKeys,
         period: periodVisible ? { from, to } : null,
         signature: useSignature
@@ -150,8 +180,41 @@ const ExportModal = ({ title, subtitle, storageKey, scopes, fields, showPeriod, 
             <div>
               <p style={sectionTitle}>Koga izvozim</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {scopes.map(s => <button key={s.value} onClick={() => setScope(s.value)} style={chip(scope === s.value)}>{s.label}</button>)}
+                {scopes.map(s => <button key={s.value} onClick={() => setScope(s.value)} style={chip(scope === s.value)}>{s.label}{s.value === 'picked' && picked.length > 0 ? ` (${picked.length})` : ''}</button>)}
               </div>
+              {scope === 'picked' && (
+                <div style={{ marginTop: '10px' }}>
+                  <div style={{ position: 'relative' }}>
+                    <Search size={15} style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)', pointerEvents: 'none' }} />
+                    <input type="search" value={peopleQuery} onChange={e => setPeopleQuery(e.target.value)} placeholder="Išči po imenu ali emailu" autoComplete="off"
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '10px 10px 10px 32px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', color: '#fff', fontSize: '16px', outline: 'none' }} />
+                  </div>
+                  <div style={{ marginTop: '6px', maxHeight: '220px', overflowY: 'auto', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    {peopleLoading || !people ? (
+                      <div style={{ padding: '12px', color: 'rgba(255,255,255,0.45)', fontSize: '13px' }}>Nalagam…</div>
+                    ) : visiblePeople.length === 0 ? (
+                      <div style={{ padding: '12px', color: 'rgba(255,255,255,0.45)', fontSize: '13px' }}>Ni zadetkov</div>
+                    ) : visiblePeople.map(p => {
+                      const on = picked.includes(p.key);
+                      return (
+                        <div key={p.key} onClick={() => togglePerson(p.key)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)', background: on ? 'rgba(16,185,129,0.1)' : 'transparent' }}>
+                          <span style={{ width: '18px', height: '18px', borderRadius: '5px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: on ? '#10b981' : 'rgba(255,255,255,0.1)' }}>
+                            {on && <Check size={13} color="#fff" />}
+                          </span>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ color: '#fff', fontSize: '14px' }}>{p.name}</div>
+                            {p.sub && <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.sub}</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+                    <span>Izbrano: {picked.length}</span>
+                    {picked.length > 0 && <button onClick={() => setPicked([])} style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '12px', fontWeight: '600', cursor: 'pointer', padding: 0 }}>Počisti izbor</button>}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
