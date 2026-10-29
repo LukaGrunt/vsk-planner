@@ -1782,6 +1782,10 @@ function App() {
   // Stable key for effects: the user object is recreated on every auth event, the id isn't
   const currentUserId = currentUser?.id ?? null;
   const [userRole, setUserRole] = useState(null);
+  // Latest role for code running in older closures (e.g. refocus handlers)
+  const userRoleRef = useRef(null);
+  userRoleRef.current = userRole;
+  const isCoachRole = (role) => role === 'admin' || role === 'superadmin';
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('home');
   const [posts, setPosts] = useState([]);
@@ -2772,11 +2776,15 @@ function App() {
     if (currentUser) {
       loadPosts();
       loadProfileData();
-      loadMembers();
       loadPopups();
       loadFeaturedArticle();
     }
   }, [currentUserId]);
+
+  // Members list depends on the role: full data for coaches, names only for everyone else
+  useEffect(() => {
+    if (currentUserId && userRole) loadMembers();
+  }, [currentUserId, userRole]);
 
   // Offline detection
   useEffect(() => {
@@ -2979,7 +2987,28 @@ function App() {
     }
   };
 
+  // Regular members only get names (plus coaches' phone/email for the trainer contact on trainings).
+  // Uses the member_directory database function; falls back to selecting just those columns.
+  const loadMemberDirectory = async () => {
+    try {
+      const { data, error } = await supabase.rpc('member_directory');
+      if (error) throw error;
+      setMembers((data || []).map(formatMember));
+    } catch (e) {
+      try {
+        const { data } = await supabase.from('members').select('id, ime, priimek, role');
+        setMembers((data || []).map(m => formatMember({ ...m, email: null })));
+      } catch (e2) {
+        setMembers([]);
+      }
+    }
+    setHasMoreMembers(false);
+  };
+
   const loadMembers = async () => {
+    if (!isCoachRole(userRoleRef.current)) {
+      return loadMemberDirectory();
+    }
     try {
       await withRetry(async () => {
         const { data, error } = await supabase
@@ -4409,7 +4438,15 @@ function App() {
 
   const tabs = (userRole === 'admin' || userRole === 'superadmin') 
     ? [{ key: 'admin-dashboard', label: t.admin, icon: BarChart3 }, { key: 'news', label: t.news, icon: FileText }, { key: 'calendar', label: t.calendar, icon: Calendar }, { key: 'chat', label: t.chat, icon: Users }, { key: 'profile', label: t.profile, icon: User }]
-    : [{ key: 'news', label: t.news, icon: FileText }, { key: 'calendar', label: t.calendar, icon: Calendar }, { key: 'chat', label: t.chat, icon: Users }, { key: 'profile', label: t.profile, icon: User }];
+    : [{ key: 'news', label: t.news, icon: FileText }, { key: 'calendar', label: t.calendar, icon: Calendar }, { key: 'training-match', label: t.trainingMatch, icon: Target, raised: true }, { key: 'chat', label: t.chat, icon: Users }, { key: 'profile', label: t.profile, icon: User }];
+
+  // Open Trening tekma; resume a match that's already running instead of wiping it
+  const openTrainingMatch = () => {
+    if (matchRuns.length === 0) {
+      setMatchPhase('setup'); setMatchShooters([]); setMatchGuests([]); setMatchRuns([]); setMatchCurrentStage(1);
+    }
+    setView('training-match');
+  };
 
   const newsPosts = posts.filter(p => p.showInNews);
 
@@ -5885,7 +5922,7 @@ function App() {
       )}
 
       {/* Training Match - IDPA Timer and Scoring */}
-      {view === 'training-match' && (userRole === 'admin' || userRole === 'superadmin') && (
+      {view === 'training-match' && (
         <div className="page-scroll">
           <div style={{ ...pageContentPadding, paddingBottom: 'calc(120px + env(safe-area-inset-bottom, 20px))' }}>
           
@@ -7063,7 +7100,23 @@ function App() {
         padding: '8px 4px',
         zIndex: 100
       }}>
-        {tabs.map(t => (
+        {tabs.map(t => t.raised ? (
+          <button key={t.key} onClick={openTrainingMatch} aria-label={t.label} style={{
+            background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            marginTop: '-30px', alignSelf: 'flex-start'
+          }}>
+            <span style={{
+              width: '58px', height: '58px', borderRadius: '50%',
+              background: view === 'training-match' ? 'linear-gradient(135deg, #e04434 0%, #b33023 100%)' : 'linear-gradient(135deg, #c1372a 0%, #9a2c22 100%)',
+              border: '5px solid #0a0b0c', boxShadow: '0 6px 18px rgba(193, 55, 42, 0.45)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+              transform: view === 'training-match' ? 'scale(1.05)' : 'none', transition: 'transform 0.2s'
+            }}>
+              <t.icon size={26} />
+            </span>
+          </button>
+        ) : (
           <button key={t.key} onClick={() => setView(t.key)} style={{
             background: 'transparent',
             border: 'none',
