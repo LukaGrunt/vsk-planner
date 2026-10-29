@@ -52,7 +52,7 @@ export const MEMBER_FIELDS = [
   { key: 'vloga', label: 'Vloga', width: 11, get: (m) => (m ? ROLE_LABELS[m.role || 'user'] || m.role : '') },
   { key: 'zadnja', label: 'Zadnja prijava', width: 17, get: (m) => formatSiDateTime(m?.lastLoginAt) },
   { key: 'listine', label: 'Orožne listine', width: 26, get: (m) => licensesText(m?.orozneListine) },
-  { key: 'orozje', label: 'Orožje', width: 36, get: (m, ctx) => weaponsText(ctx?.weaponsByEmail?.[lower(m?.email)]) }
+  { key: 'orozje', label: 'Orožje', width: 36, get: (m, ctx) => weaponsText(Array.isArray(m?.orozje) && m.orozje.length > 0 ? m.orozje : ctx?.weaponsByEmail?.[lower(m?.email)]) }
 ];
 
 export const fieldsNeedWeapons = (fieldKeys) => fieldKeys.includes('orozje');

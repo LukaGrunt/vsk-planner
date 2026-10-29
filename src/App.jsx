@@ -1781,7 +1781,13 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   // Stable key for effects: the user object is recreated on every auth event, the id isn't
   const currentUserId = currentUser?.id ?? null;
-  const [userRole, setUserRole] = useState(null);
+  // actualRole = the account's real role. userRole = what the app shows, which a
+  // superadmin can switch with "Poglej kot" to check the coach or member view.
+  const [actualRole, setUserRole] = useState(null);
+  const [viewAsRole, setViewAsRoleState] = useState(() => {
+    try { const v = sessionStorage.getItem('vsk-view-as'); return v === 'admin' || v === 'user' ? v : null; } catch (e) { return null; }
+  });
+  const userRole = actualRole === 'superadmin' && viewAsRole ? viewAsRole : actualRole;
   // Latest role for code running in older closures (e.g. refocus handlers)
   const userRoleRef = useRef(null);
   userRoleRef.current = userRole;
@@ -2781,6 +2787,11 @@ function App() {
     }
   }, [currentUserId]);
 
+  // Never leave someone on an admin page their (shown) role can't open, e.g. "Poglej kot: Član"
+  useEffect(() => {
+    if (userRole && !isCoachRole(userRole) && view.startsWith('admin-')) setView('news');
+  }, [userRole, view]);
+
   // Members list depends on the role: full data for coaches, names only for everyone else
   useEffect(() => {
     if (currentUserId && userRole) loadMembers();
@@ -2894,7 +2905,8 @@ function App() {
             morsStevilo: sanitizeInput(data.mors_stevilo) || '',
             konfekcijskaStevilka: sanitizeInput(data.konfekcijska_stevilka) || '',
             orozneListine: Array.isArray(data.orozne_listine) ? data.orozne_listine : [],
-            orozje: Array.isArray(appData?.weapons) ? appData.weapons : []
+            // Weapons live on the member record; older ones may still only be on the application
+            orozje: Array.isArray(data.orozje) && data.orozje.length > 0 ? data.orozje : (Array.isArray(appData?.weapons) ? appData.weapons : [])
           });
         }
       });
@@ -3422,7 +3434,18 @@ function App() {
     }
   };
 
+  // Superadmin "Poglej kot": only changes what is shown; the database still sees the real account
+  const setViewAs = (role) => {
+    const next = role === 'admin' || role === 'user' ? role : null;
+    setViewAsRoleState(next);
+    try { if (next) sessionStorage.setItem('vsk-view-as', next); else sessionStorage.removeItem('vsk-view-as'); } catch (e) { /* ignore */ }
+    setSelectedEvent(null);
+    setAdminExport(null);
+    setView(next === 'user' ? 'news' : 'admin-dashboard');
+  };
+
   const handleLogout = async () => {
+    setViewAs(null);
     try {
       await supabase.auth.signOut();
     } catch (e) {
@@ -3751,17 +3774,21 @@ function App() {
 
   const saveProfileData = async () => {
     try {
-      const { error } = await supabase
-        .from('members')
-        .update({
-          ime: profileData.ime,
-          priimek: profileData.priimek,
-          telefon: profileData.telefon,
-          mors_stevilo: profileData.morsStevilo,
-          konfekcijska_stevilka: profileData.konfekcijskaStevilka,
-          orozne_listine: profileData.orozneListine
-        })
-        .eq('user_id', currentUser.id);
+      const memberUpdate = {
+        ime: profileData.ime,
+        priimek: profileData.priimek,
+        telefon: profileData.telefon,
+        mors_stevilo: profileData.morsStevilo,
+        konfekcijska_stevilka: profileData.konfekcijskaStevilka,
+        orozne_listine: profileData.orozneListine,
+        orozje: profileData.orozje
+      };
+      let { error } = await supabase.from('members').update(memberUpdate).eq('user_id', currentUser.id);
+      // Database not migrated yet (no "orozje" column): save the rest, weapons still go to the application below
+      if (error && /orozje/i.test(error.message || '')) {
+        const { orozje, ...withoutWeapons } = memberUpdate;
+        ({ error } = await supabase.from('members').update(withoutWeapons).eq('user_id', currentUser.id));
+      }
 
       if (error) throw error;
 
@@ -5916,6 +5943,24 @@ function App() {
             <span style={{ color: '#fff', fontSize: '15px', fontWeight: '600' }}>{t.support}</span>
           </a>
           
+          {actualRole === 'superadmin' && (
+            <div style={{ ...glassCardStyle, padding: '16px', marginBottom: '14px' }}>
+              <div style={{ color: '#fff', fontSize: '15px', fontWeight: '600', marginBottom: '4px' }}>Poglej kot</div>
+              <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px', marginBottom: '12px' }}>Preveri, kaj vidi trener ali član. Spremeni samo prikaz, ne pravic.</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', background: 'rgba(0,0,0,0.3)', padding: '4px', borderRadius: '12px' }}>
+                {[{ v: null, label: 'Super admin' }, { v: 'admin', label: 'Trener' }, { v: 'user', label: 'Član' }].map(o => {
+                  const active = (viewAsRole || null) === o.v;
+                  return (
+                    <button key={o.label} onClick={() => setViewAs(o.v)} style={{
+                      padding: '10px 6px', borderRadius: '9px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600',
+                      background: active ? 'linear-gradient(135deg, #c1372a 0%, #9a2c22 100%)' : 'transparent',
+                      color: active ? '#fff' : 'rgba(255,255,255,0.6)'
+                    }}>{o.label}</button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <button onClick={handleLogout} style={{ width: '100%', background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', color: '#fff', padding: '14px', borderRadius: '12px', border: 'none', fontSize: '15px', fontWeight: '600', cursor: 'pointer', boxShadow: '0 4px 20px rgba(239, 68, 68, 0.3)' }}>{t.logout}</button>
           </div>
         </div>
@@ -7043,17 +7088,20 @@ function App() {
                   ))}
                 </div>
               )}
-              {memberApplicationData?.weapons && memberApplicationData.weapons.length > 0 && (
+              {(() => {
+                const memberWeapons = Array.isArray(selectedMember.orozje) && selectedMember.orozje.length > 0 ? selectedMember.orozje : (memberApplicationData?.weapons || []);
+                return memberWeapons.length > 0 && (
                 <div style={{ paddingTop: '8px' }}>
                   <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>Orožje</span>
-                  {memberApplicationData.weapons.map((w, i) => (
+                  {memberWeapons.map((w, i) => (
                     <div key={i} style={{ color: '#fff', fontSize: '13px', marginLeft: '12px', marginTop: '4px' }}>
                       • {w.vrsta_orozja}{w.model_orozja ? ` — ${w.model_orozja}` : ''}
                       {(w.kaliber || w.serijska_stevilka) && <span style={{ color: 'rgba(255,255,255,0.5)' }}> ({[w.kaliber, w.serijska_stevilka].filter(Boolean).join(', ')})</span>}
                     </div>
                   ))}
                 </div>
-              )}
+                );
+              })()}
             </div>
             <div>
               <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>Pristopna izjava</div>
@@ -7082,6 +7130,22 @@ function App() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Reminder while a superadmin previews another role */}
+      {actualRole === 'superadmin' && viewAsRole && (
+        <div style={{
+          position: 'fixed', top: 'calc(8px + env(safe-area-inset-top, 0px))', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 1200, display: 'flex', alignItems: 'center', gap: '10px',
+          background: 'rgba(245, 158, 11, 0.95)', color: '#1a1205', borderRadius: '999px',
+          padding: '6px 6px 6px 14px', fontSize: '12px', fontWeight: '700', boxShadow: '0 4px 16px rgba(0,0,0,0.4)', whiteSpace: 'nowrap'
+        }}>
+          <span>Pregled kot: {viewAsRole === 'user' ? 'Član' : 'Trener'}</span>
+          <button onClick={() => { setViewAs(null); setView('profile'); }} style={{
+            background: '#1a1205', color: '#fbbf24', border: 'none', borderRadius: '999px', padding: '5px 10px',
+            fontSize: '12px', fontWeight: '700', cursor: 'pointer'
+          }}>Izhod</button>
         </div>
       )}
 
