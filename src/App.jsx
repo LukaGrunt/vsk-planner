@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Sentry from '@sentry/react';
 import { supabase } from './supabaseClient';
-import { Calendar, Target, User, Users, FileText, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Edit2, Trash2, X, BarChart3, Trophy, Volume2, Send, Upload, Check, AlertCircle, Link, ExternalLink, Timer, UserPlus, RotateCcw, Download } from 'lucide-react';
+import { Calendar, Target, User, Users, FileText, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Edit2, Trash2, X, BarChart3, Trophy, Volume2, Send, Upload, Check, AlertCircle, Link, ExternalLink, Timer, UserPlus, RotateCcw, Download, Search } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
 // Initialize Sentry for error monitoring
@@ -164,6 +164,45 @@ const EVENT_COLORS = {
 // Pagination constants
 const POSTS_PER_PAGE = 50;
 const MEMBERS_PER_PAGE = 100;
+
+// Convert a Supabase member row (snake_case) to the camelCase shape the UI uses
+const formatMember = (m) => ({
+  ...m,
+  morsStevilo: m.mors_stevilo,
+  membershipPaid: m.membership_paid,
+  orozneListine: m.orozne_listine,
+  hasLoggedIn: m.has_logged_in,
+  firstLoginAt: m.first_login_at,
+  lastLoginAt: m.last_login_at,
+  createdAt: m.created_at,
+  createdBy: m.created_by,
+  userId: m.user_id
+});
+
+// Lowercase + strip diacritics so "bencina" matches "Benčina"
+const normalizeSearch = (str) => String(str ?? '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .trim();
+
+// Every word of the query must appear somewhere in the member's searchable fields
+const memberMatchesSearch = (m, query) => {
+  const q = normalizeSearch(query);
+  if (!q) return true;
+  const phone = String(m.telefon ?? '');
+  const haystack = normalizeSearch([
+    m.ime, m.priimek, m.email, phone, phone.replace(/\D/g, ''), m.morsStevilo
+  ].join(' '));
+  return q.split(/\s+/).every(word => haystack.includes(word) || haystack.includes(word.replace(/\D/g, '') || '\u0000'));
+};
+
+// Supabase returns timestamps as ISO strings; older Firebase data had .toDate()
+const formatMemberDate = (value) => {
+  if (!value) return null;
+  const d = typeof value.toDate === 'function' ? value.toDate() : new Date(value);
+  return isNaN(d.getTime()) ? null : d.toLocaleDateString('sl');
+};
 
 // ============================================
 // UTILITY FUNCTIONS FOR CODE STRENGTHENING
@@ -1597,6 +1636,9 @@ function App() {
   const [lastPostDoc, setLastPostDoc] = useState(null);
   const [hasMoreMembers, setHasMoreMembers] = useState(false);
   const [lastMemberDoc, setLastMemberDoc] = useState(null);
+  const [memberListSearch, setMemberListSearch] = useState('');
+  const [memberListFilter, setMemberListFilter] = useState('all'); // all | paid | unpaid | notLoggedIn
+  const [loadingAllMembers, setLoadingAllMembers] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
   const [showCSVImport, setShowCSVImport] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
@@ -2753,18 +2795,7 @@ function App() {
         const members = data.length === MEMBERS_PER_PAGE + 1 ? data.slice(0, MEMBERS_PER_PAGE) : data;
 
         // Convert snake_case to camelCase for UI
-        const membersFormatted = members.map(m => ({
-          ...m,
-          morsStevilo: m.mors_stevilo,
-          membershipPaid: m.membership_paid,
-          orozneListine: m.orozne_listine,
-          hasLoggedIn: m.has_logged_in,
-          firstLoginAt: m.first_login_at,
-          lastLoginAt: m.last_login_at,
-          createdAt: m.created_at,
-          createdBy: m.created_by,
-          userId: m.user_id
-        }));
+        const membersFormatted = members.map(formatMember);
 
         setMembers(membersFormatted);
       });
@@ -2774,6 +2805,44 @@ function App() {
       setHasMoreMembers(false);
     }
   };
+
+  // Load every member (in chunks) so search/filters on Člani cover the whole club,
+  // not just the first page that's already loaded.
+  const loadAllMembers = async () => {
+    if (loadingAllMembers) return;
+    setLoadingAllMembers(true);
+    try {
+      await withRetry(async () => {
+        const CHUNK = 1000;
+        const all = [];
+        for (let from = 0; ; from += CHUNK) {
+          const { data, error } = await supabase
+            .from('members')
+            .select('*')
+            .order('id', { ascending: true })
+            .range(from, from + CHUNK - 1);
+          if (error) throw error;
+          all.push(...data);
+          if (data.length < CHUNK) break;
+        }
+        const seen = new Set();
+        const unique = all.filter(m => (seen.has(m.id) ? false : seen.add(m.id)));
+        setMembers(unique.map(formatMember));
+        setHasMoreMembers(false);
+      });
+    } catch (e) {
+      // Keep whatever is already loaded; "Naloži več" still works as fallback
+    } finally {
+      setLoadingAllMembers(false);
+    }
+  };
+
+  // As soon as the admin searches or filters, make sure the full list is loaded
+  useEffect(() => {
+    if (hasMoreMembers && (memberListSearch.trim() || memberListFilter !== 'all')) {
+      loadAllMembers();
+    }
+  }, [memberListSearch, memberListFilter, hasMoreMembers]);
 
   const loadMoreMembers = async () => {
     try {
@@ -2793,18 +2862,7 @@ function App() {
         const newMembers = data.length === MEMBERS_PER_PAGE + 1 ? data.slice(0, MEMBERS_PER_PAGE) : data;
 
         // Convert snake_case to camelCase for UI
-        const membersFormatted = newMembers.map(m => ({
-          ...m,
-          morsStevilo: m.mors_stevilo,
-          membershipPaid: m.membership_paid,
-          orozneListine: m.orozne_listine,
-          hasLoggedIn: m.has_logged_in,
-          firstLoginAt: m.first_login_at,
-          lastLoginAt: m.last_login_at,
-          createdAt: m.created_at,
-          createdBy: m.created_by,
-          userId: m.user_id
-        }));
+        const membersFormatted = newMembers.map(formatMember);
 
         setMembers(prev => [...prev, ...membersFormatted]);
       });
@@ -4499,8 +4557,59 @@ function App() {
       {view === 'admin-members' && userRole === 'superadmin' && (
         <div className="page-scroll">
           <div style={pageContentPadding}>
-          <h1 style={{ fontSize: '22px', fontWeight: '700', color: '#fff', marginBottom: '16px' }}>Člani</h1>
-          {members.map(m => (
+          {(() => {
+            const filterChecks = {
+              all: () => true,
+              paid: m => m.membershipPaid,
+              unpaid: m => !m.membershipPaid,
+              notLoggedIn: m => !m.hasLoggedIn
+            };
+            const filterLabels = { all: 'Vsi', paid: 'Plačano', unpaid: 'Ni plačano', notLoggedIn: 'Ni se prijavil' };
+            const isFiltering = memberListSearch.trim() !== '' || memberListFilter !== 'all';
+            const filteredMembers = members.filter(m => filterChecks[memberListFilter](m) && memberMatchesSearch(m, memberListSearch));
+            return (
+          <>
+          <div style={{ position: 'sticky', top: 0, zIndex: 5, background: '#0a0b0c', margin: 'calc(-16px - env(safe-area-inset-top, 0px)) -16px 6px', padding: 'calc(16px + env(safe-area-inset-top, 0px)) 16px 10px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <h1 style={{ fontSize: '22px', fontWeight: '700', color: '#fff', margin: 0 }}>Člani</h1>
+              <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '13px' }}>
+                {loadingAllMembers ? 'Nalagam vse člane…' : isFiltering ? `${filteredMembers.length} / ${members.length}` : members.length}
+              </span>
+            </div>
+            <div style={{ position: 'relative' }}>
+              <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)', pointerEvents: 'none' }} />
+              <input
+                type="search"
+                value={memberListSearch}
+                onChange={(e) => setMemberListSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setMemberListSearch(''); }}
+                placeholder="Išči po imenu, e-pošti, telefonu, MORS…"
+                autoComplete="off"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '12px 38px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', color: '#fff', fontSize: '16px', outline: 'none' }}
+              />
+              {memberListSearch && (
+                <button onClick={() => setMemberListSearch('')} aria-label="Počisti iskanje"
+                  style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
+              {Object.keys(filterLabels).map(key => {
+                const active = memberListFilter === key;
+                return (
+                  <button key={key} onClick={() => setMemberListFilter(key)}
+                    style={{ padding: '6px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', border: active ? '1px solid rgba(239,68,68,0.6)' : '1px solid rgba(255,255,255,0.12)', background: active ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.04)', color: active ? '#fff' : 'rgba(255,255,255,0.6)' }}>
+                    {filterLabels[key]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          {isFiltering && !loadingAllMembers && filteredMembers.length === 0 && (
+            <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.45)', fontSize: '14px', padding: '32px 0' }}>Ni zadetkov.</div>
+          )}
+          {filteredMembers.map(m => (
             <div key={m.id} style={{ ...glassCardStyle, padding: '14px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', cursor: 'pointer' }}
               onClick={() => { setSelectedMember(m); fetchMemberApplication(m.email); }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -4523,9 +4632,12 @@ function App() {
                 <div>
                   <div style={{ color: '#fff', fontSize: '15px', fontWeight: '600' }}>{m.ime} {m.priimek}</div>
                   <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>{m.email}</div>
-                  {m.lastLoginAt && (
+                  {m.morsStevilo && (
+                    <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: '11px', marginTop: '2px' }}>MORS: {m.morsStevilo}</div>
+                  )}
+                  {formatMemberDate(m.lastLoginAt) && (
                     <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px', marginTop: '2px' }}>
-                      Zadnja prijava: {m.lastLoginAt.toDate ? new Date(m.lastLoginAt.toDate()).toLocaleDateString('sl') : 'N/A'}
+                      Zadnja prijava: {formatMemberDate(m.lastLoginAt)}
                     </div>
                   )}
                 </div>
@@ -4538,9 +4650,12 @@ function App() {
               </div>
             </div>
           ))}
+          </>
+            );
+          })()}
 
           {/* Load More Members Button */}
-          {hasMoreMembers && (
+          {hasMoreMembers && !loadingAllMembers && (
             <div style={{ textAlign: 'center', marginTop: '20px' }}>
               <button
                 onClick={loadMoreMembers}
