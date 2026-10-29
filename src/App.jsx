@@ -4680,7 +4680,7 @@ function App() {
       
       {showCSVImport && <CSVImportModal onClose={() => setShowCSVImport(false)} onImport={handleCSVImport} t={t} />}
       {/* Admin exports (coaches + superadmins only) */}
-      {adminExport === 'members' && (userRole === 'admin' || userRole === 'superadmin') && (
+      {adminExport === 'members' && userRole === 'superadmin' && (
         <ExportModal
           title="Izvoz članov"
           subtitle="Izberi koga in katere podatke"
@@ -4707,7 +4707,7 @@ function App() {
           }}
         />
       )}
-      {adminExport === 'period' && (userRole === 'admin' || userRole === 'superadmin') && (
+      {adminExport === 'period' && userRole === 'superadmin' && (
         <ExportModal
           title="Poročilo prisotnosti"
           subtitle="Vsi zaključeni treningi v obdobju"
@@ -4760,6 +4760,9 @@ function App() {
               </div>
               <ChevronRight size={22} color="rgba(255,255,255,0.3)" />
             </div>
+            {/* Member and period exports: superadmin only (coaches export from finished trainings) */}
+            {userRole === 'superadmin' && (
+              <>
             <div onClick={() => setAdminExport('members')} style={{ ...glassCardStyle, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                 <div style={{ width: '46px', height: '46px', borderRadius: '12px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px rgba(16, 185, 129, 0.3)' }}><Users size={22} color="#fff" /></div>
@@ -4774,6 +4777,8 @@ function App() {
               </div>
               <ChevronRight size={22} color="rgba(255,255,255,0.3)" />
             </div>
+              </>
+            )}
             {userRole === 'superadmin' && (
               <>
                 <div onClick={() => setView('admin-popups')} style={{ ...glassCardStyle, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
