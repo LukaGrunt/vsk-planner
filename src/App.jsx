@@ -1627,6 +1627,8 @@ const sendNotification = async (title, body) => {
 
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
+  // Stable key for effects: the user object is recreated on every auth event, the id isn't
+  const currentUserId = currentUser?.id ?? null;
   const [userRole, setUserRole] = useState(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('home');
@@ -1670,6 +1672,9 @@ function App() {
   const [statsTab, setStatsTab] = useState('attendance');
   const [showSplash, setShowSplash] = useState(true);
   const [loadingError, setLoadingError] = useState(null);
+  // Tracks which user is already loaded, so Supabase's repeated SIGNED_IN events
+  // (fired every time the tab/app regains focus) don't trigger a full reload
+  const currentUserIdRef = useRef(null);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [featuredArticle, setFeaturedArticle] = useState(null);
@@ -2337,9 +2342,13 @@ function App() {
         setConnectionStatus('connected');
 
         if (session?.user) {
+          // The auth listener below may have already loaded this user
+          if (currentUserIdRef.current === session.user.id) return;
+          currentUserIdRef.current = session.user.id;
           setCurrentUser(session.user);
           await loadUserProfile(session.user);
         } else {
+          currentUserIdRef.current = null;
           setCurrentUser(null);
           setUserRole(null);
           setView('home');
@@ -2372,7 +2381,14 @@ function App() {
       // so skip all state updates to avoid re-renders and effect cascade
       if (event === 'TOKEN_REFRESHED') return;
 
+      // Supabase re-emits SIGNED_IN on every tab/app refocus with a fresh user object.
+      // Same user = nothing changed, so don't touch state (that caused the "blink"
+      // and wiped half-filled forms by re-running every data load).
+      if (event === 'INITIAL_SESSION' && !session) return;
+      if (session?.user && session.user.id === currentUserIdRef.current && event !== 'USER_UPDATED') return;
+
       if (session?.user) {
+        currentUserIdRef.current = session.user.id;
         setCurrentUser(session.user);
         try {
           await loadUserProfile(session.user);
@@ -2388,6 +2404,7 @@ function App() {
       } else if (event === 'SIGNED_OUT') {
         // Only fully reset on explicit logout — not on transient network blips
         viewInitialized.current = false;
+        currentUserIdRef.current = null;
         setCurrentUser(null);
         setUserRole(null);
         setView('home');
@@ -2417,7 +2434,7 @@ function App() {
     }, 30 * 60 * 1000); // 30 minutes
 
     return () => clearInterval(sessionRefreshInterval);
-  }, [currentUser]);
+  }, [currentUserId]);
 
   // Helper function to load user profile from Supabase
   const loadUserProfile = async (user) => {
@@ -2577,7 +2594,7 @@ function App() {
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [currentUser]);
+  }, [currentUserId]);
 
   // Load all data when user logs in
   useEffect(() => {
@@ -2588,7 +2605,7 @@ function App() {
       loadPopups();
       loadFeaturedArticle();
     }
-  }, [currentUser]);
+  }, [currentUserId]);
 
   // Offline detection
   useEffect(() => {
@@ -2640,6 +2657,17 @@ function App() {
 
     loadMessages();
 
+    // Realtime can miss messages while the phone is asleep — catch up after 5+ min away
+    let messagesHiddenAt = 0;
+    const handleMessagesVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        messagesHiddenAt = Date.now();
+      } else if (messagesHiddenAt && Date.now() - messagesHiddenAt > 5 * 60 * 1000) {
+        loadMessages();
+      }
+    };
+    document.addEventListener('visibilitychange', handleMessagesVisibility);
+
     // Real-time subscription for new messages
     const subscription = supabase
       .channel('messages')
@@ -2656,9 +2684,10 @@ function App() {
       .subscribe();
 
     return () => {
+      document.removeEventListener('visibilitychange', handleMessagesVisibility);
       subscription.unsubscribe();
     };
-  }, [currentUser]);
+  }, [currentUserId]);
 
   const loadProfileData = async () => {
     try {
