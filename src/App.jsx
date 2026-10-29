@@ -1316,38 +1316,72 @@ const PostForm = ({ post, onSave, onCancel, members, t }) => {
 };
 
 // CSV Import Modal
+// CSV reader: works with "," and ";" (Slovenian Excel saves with ";"), quoted text
+// containing commas or line breaks, Windows line endings and an Excel BOM.
+const splitCsv = (text) => {
+  const src = String(text || '').replace(/^\ufeff/, '');
+  const firstLine = src.split(/\r?\n/)[0] || '';
+  const delimiter = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inQuotes) {
+      if (ch === '"' && src[i + 1] === '"') { field += '"'; i++; }
+      else if (ch === '"') inQuotes = false;
+      else field += ch;
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === delimiter) {
+      row.push(field); field = '';
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && src[i + 1] === '\n') i++;
+      row.push(field); rows.push(row); row = []; field = '';
+    } else {
+      field += ch;
+    }
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(v => v.trim() !== ''));
+};
+
+// Accepts 10.1.2027, 10. 1. 2027, 10/01/2027, 10-01-2027 and 2027-01-10. Returns YYYY-MM-DD or ''.
+const parseCsvDate = (value) => {
+  const v = String(value || '').trim();
+  let y, m, d;
+  let match = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (match) [, y, m, d] = match;
+  else if ((match = v.match(/^(\d{1,2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{4})\.?$/))) [, d, m, y] = match;
+  else return '';
+  const dt = new Date(Number(y), Number(m) - 1, Number(d));
+  if (dt.getFullYear() !== Number(y) || dt.getMonth() !== Number(m) - 1 || dt.getDate() !== Number(d)) return '';
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+};
+
 const CSVImportModal = ({ onClose, onImport, t }) => {
   const [csvText, setCsvText] = useState('');
   const [preview, setPreview] = useState([]);
   const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
   const fileInputRef = useRef(null);
 
   const parseCSV = (text) => {
-    const lines = text.trim().split('\n');
-    if (lines.length < 2) { setError('CSV mora vsebovati glavo in vsaj eno vrstico podatkov'); setPreview([]); return; }
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const table = splitCsv(text);
+    if (table.length < 2) { setError('CSV mora vsebovati glavo in vsaj eno vrstico podatkov'); setPreview([]); return; }
+    const headers = table[0].map(h => h.trim().toLowerCase().replace(/^\ufeff/, ''));
     const requiredHeaders = ['tip', 'naslov', 'datum'];
     const missing = requiredHeaders.filter(h => !headers.includes(h));
     if (missing.length > 0) { setError(`Manjkajoči stolpci: ${missing.join(', ')}`); setPreview([]); return; }
     const events = [];
-    for (let i = 1; i < lines.length; i++) {
-      if (!lines[i].trim()) continue;
-      const values = lines[i].split(',').map(v => v.trim());
+    const skipped = [];
+    for (let i = 1; i < table.length; i++) {
+      if (table[i].every(v => !v.trim())) continue;
+      const values = table[i].map(v => v.trim());
       const event = {};
       headers.forEach((header, index) => { event[header] = values[index] || ''; });
       const typeMap = { 'trening': 'training', 'training': 'training', 'tekma': 'competition', 'competition': 'competition' };
 
-      // Convert date from DD/MM/YYYY to YYYY-MM-DD
-      let formattedDate = '';
-      if (event.datum) {
-        const parts = event.datum.split('/');
-        if (parts.length === 3) {
-          const day = parts[0].padStart(2, '0');
-          const month = parts[1].padStart(2, '0');
-          const year = parts[2];
-          formattedDate = `${year}-${month}-${day}`;
-        }
-      }
+      const formattedDate = parseCsvDate(event.datum);
 
       const mappedEvent = {
         type: typeMap[event.tip?.toLowerCase()] || 'training', title: event.naslov || '', description: event.opis || '',
@@ -1356,7 +1390,9 @@ const CSVImportModal = ({ onClose, onImport, t }) => {
         showInNews: false, rsvps: []
       };
       if (mappedEvent.title && mappedEvent.date) events.push(mappedEvent);
+      else skipped.push(`${i + 1}${!mappedEvent.title ? ' (manjka naslov)' : ` (datum »${event.datum || ''}« ni prepoznan)`}`);
     }
+    setWarning(skipped.length ? `Preskočene vrstice: ${skipped.join(', ')}. Datum zapiši kot 10.1.2027, 10/01/2027 ali 2027-01-10.` : '');
     if (events.length === 0) { setError('Ni veljavnih dogodkov v CSV'); setPreview([]); return; }
     setError(''); setPreview(events);
   };
@@ -1387,8 +1423,9 @@ const CSVImportModal = ({ onClose, onImport, t }) => {
         <button onClick={() => fileInputRef.current?.click()} style={{ width: '100%', padding: '14px', ...glassCardStyle, border: '2px dashed rgba(255,255,255,0.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#fff', fontSize: '14px', marginBottom: '12px' }}>
           <Upload size={18} /> {t.uploadCSVFile}
         </button>
-        <textarea value={csvText} onChange={(e) => { setCsvText(e.target.value); if (e.target.value.trim()) parseCSV(e.target.value); else { setPreview([]); setError(''); } }} placeholder={t.csvPlaceholder}
+        <textarea value={csvText} onChange={(e) => { setCsvText(e.target.value); if (e.target.value.trim()) parseCSV(e.target.value); else { setPreview([]); setError(''); setWarning(''); } }} placeholder={t.csvPlaceholder}
           style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '12px', fontFamily: 'monospace', minHeight: '100px', resize: 'vertical', boxSizing: 'border-box' }} />
+        {warning && <div style={{ background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.5)', borderRadius: '10px', padding: '10px 12px', marginTop: '12px', color: '#fbbf24', fontSize: '13px' }}>⚠️ {warning}</div>}
         {error && <div style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid #ef4444', borderRadius: '10px', padding: '10px 12px', marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}><AlertCircle size={16} color="#ef4444" /><span style={{ color: '#ef4444', fontSize: '13px' }}>{error}</span></div>}
         {preview.length > 0 && (
           <div style={{ marginTop: '16px' }}>
@@ -1817,6 +1854,7 @@ function App() {
   const [posts, setPosts] = useState([]);
   const [members, setMembers] = useState([]);
   const [hasMorePosts, setHasMorePosts] = useState(false);
+  const [adminPostsLimit, setAdminPostsLimit] = useState(POSTS_PER_PAGE);
   const [lastPostDoc, setLastPostDoc] = useState(null);
   const [hasMoreMembers, setHasMoreMembers] = useState(false);
   const [lastMemberDoc, setLastMemberDoc] = useState(null);
@@ -2959,22 +2997,25 @@ function App() {
   const loadPosts = async () => {
     try {
       await withRetry(async () => {
-        const { data, error } = await supabase
-          .from('posts')
-          .select('*')
-          .order('date', { ascending: false })
-          .range(0, POSTS_PER_PAGE);
-
-        if (error) throw error;
+        // Load ALL posts. It used to load only the 50 with the latest dates, so after
+        // importing many future trainings the nearer ones silently disappeared.
+        const CHUNK = 1000;
+        const data = [];
+        for (let from = 0; ; from += CHUNK) {
+          const { data: chunk, error } = await supabase
+            .from('posts')
+            .select('*')
+            .order('date', { ascending: false })
+            .order('id', { ascending: true })
+            .range(from, from + CHUNK - 1);
+          if (error) throw error;
+          data.push(...chunk);
+          if (chunk.length < CHUNK) break;
+        }
 
         // Transform snake_case database columns to camelCase for app
-        const transformedData = data.map(transformPost);
-
-        // Check if there are more posts
-        setHasMorePosts(transformedData.length === POSTS_PER_PAGE + 1);
-
-        // Remove the extra document if it exists
-        const posts = transformedData.length === POSTS_PER_PAGE + 1 ? transformedData.slice(0, POSTS_PER_PAGE) : transformedData;
+        const posts = data.map(transformPost);
+        setHasMorePosts(false);
         setPosts(posts);
 
         // Store last document for pagination
@@ -3586,7 +3627,8 @@ function App() {
 
   const handleCSVImport = async (events) => {
     try {
-      let successCount = 0;
+      // Build every row first, then insert them together (all or nothing per batch of 100)
+      const rows = [];
       for (const event of events) {
         // Convert camelCase to snake_case for database
         const dbEvent = {
@@ -3605,17 +3647,26 @@ function App() {
           rsvps: []
         };
 
-        const { error: csvInsertError } = await supabase
-          .from('posts')
-          .insert((() => { const c = { ...dbEvent }; Object.keys(c).forEach(k => { if (c[k] === '') c[k] = null; }); return c; })());
-
-        if (csvInsertError) throw new Error(formatSupabaseError(csvInsertError));
-        successCount++;
+        const c = { ...dbEvent };
+        Object.keys(c).forEach(k => { if (c[k] === '') c[k] = null; });
+        rows.push(c);
+      }
+      let successCount = 0;
+      for (let i = 0; i < rows.length; i += 100) {
+        const batch = rows.slice(i, i + 100);
+        const { error: csvInsertError } = await supabase.from('posts').insert(batch);
+        if (csvInsertError) {
+          throw new Error(`${formatSupabaseError(csvInsertError)}${successCount ? ` (uvoženih je bilo že ${successCount}, ostali niso)` : ' (nič ni bilo uvoženo)'}`);
+        }
+        successCount += batch.length;
       }
       setShowCSVImport(false);
       loadPosts();
       showToast(`${t.importSuccess || 'Uspešno uvoženih'} ${successCount} ${t.events || 'dogodkov'}!`, 'success');
-    } catch (e) { showToast((t.importError || 'Napaka pri uvozu') + ': ' + e.message, 'error'); }
+    } catch (e) {
+      loadPosts();
+      showToast((t.importError || 'Napaka pri uvozu') + ': ' + e.message, 'error');
+    }
   };
 
   const handleDeletePost = async (id) => {
@@ -4846,7 +4897,7 @@ function App() {
             <h1 style={{ fontSize: '22px', fontWeight: '700', color: '#fff' }}>Objave</h1>
             <button onClick={() => setEditingPost({})} style={{ background: 'linear-gradient(135deg, #c1372a 0%, #9a2c22 100%)', color: '#fff', padding: '10px 18px', borderRadius: '10px', border: 'none', fontSize: '13px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 15px rgba(193, 55, 42, 0.3)' }}><Plus size={16} />Nova</button>
           </div>
-          {posts.map(post => {
+          {posts.slice(0, adminPostsLimit).map(post => {
             const formatDate = (dateStr) => {
               if (!dateStr) return '';
               const parts = dateStr.split('-');
@@ -4887,10 +4938,10 @@ function App() {
           })}
 
           {/* Load More Posts Button */}
-          {hasMorePosts && (
+          {posts.length > adminPostsLimit && (
             <div style={{ textAlign: 'center', marginTop: '20px' }}>
               <button
-                onClick={loadMorePosts}
+                onClick={() => setAdminPostsLimit(l => l + POSTS_PER_PAGE)}
                 style={{
                   background: 'rgba(255,255,255,0.1)',
                   border: '1px solid rgba(255,255,255,0.2)',
