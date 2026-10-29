@@ -177,7 +177,11 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json()
-    const { title, date, time, location, type, trainerEmail, trainerName, attendees, notes } = body
+    const { title, date, time, location, type, trainerEmail, trainerName, attendees, notes, attachment } = body
+    // Optional attendance PDF generated in the app ({ filename, content: base64 })
+    const attachments = attachment?.filename && attachment?.content
+      ? [{ filename: String(attachment.filename).slice(0, 120), content: String(attachment.content) }]
+      : undefined
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
@@ -258,6 +262,7 @@ Deno.serve(async (req) => {
         to: [RECIPIENT],
         subject: `Poročilo treninga: ${title} — ${formatDate(date)}`,
         html,
+        ...(attachments ? { attachments } : {}),
       }),
     })
 

@@ -3,6 +3,8 @@ import * as Sentry from '@sentry/react';
 import { supabase, authUrlState } from './supabaseClient';
 import { Calendar, Target, User, Users, FileText, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Edit2, Trash2, X, BarChart3, Trophy, Volume2, Send, Upload, Check, AlertCircle, Link, ExternalLink, Timer, UserPlus, RotateCcw, Download, Search } from 'lucide-react';
 import html2canvas from 'html2canvas';
+import ExportModal from './ExportModal';
+import { MEMBER_FIELDS, buildMembersReport, buildTrainingReport, buildPeriodReport, fieldsNeedWeapons, loadWeaponsByEmail, makeExportFile, blobToBase64 } from './exports';
 
 // Initialize Sentry for error monitoring
 Sentry.init({
@@ -332,7 +334,7 @@ const PoliceTape = () => (
 );
 
 // Event Detail Modal
-const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, profileData, userRole, onCompleteTraining, onCancelTraining, t, language, members }) => {
+const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, profileData, userRole, onCompleteTraining, onCancelTraining, t, language, members, showToast }) => {
   const eventConfig = EVENT_COLORS[post.type];
   const IconComponent = eventConfig?.icon || FileText;
   const currentRSVPs = post.rsvps || [];
@@ -360,6 +362,44 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
   );
   const [trainerNotes, setTrainerNotes] = useState('');
   const [savingAAR, setSavingAAR] = useState(false);
+  // "Dodaj člana": coach adds someone who came without signing up
+  const [addMemberQuery, setAddMemberQuery] = useState('');
+  // Training export (coach only). Holds the training data to export, or null.
+  const [exportPost, setExportPost] = useState(null);
+  const [aarDone, setAarDone] = useState(null);
+
+  const memberDisplayName = (m) => `${m.ime || ''} ${m.priimek || ''}`.trim() || m.email;
+  const addMemberMatches = (() => {
+    const q = addMemberQuery.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!q) return [];
+    const taken = new Set(attendance.map(a => String(a.email || '').toLowerCase()));
+    return (members || [])
+      .filter(m => m.email && !taken.has(m.email.toLowerCase()))
+      .filter(m => `${memberDisplayName(m)} ${m.email}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(q))
+      .slice(0, 6);
+  })();
+  const addMemberToAttendance = (m) => {
+    setAttendance(prev => [...prev, { userId: m.user_id || null, email: m.email, name: memberDisplayName(m), present: true, addedByCoach: true }]);
+    setAddMemberQuery('');
+  };
+
+  const renderTrainingExport = () => exportPost && (
+    <ExportModal
+      title="Izvozi seznam"
+      subtitle={`${exportPost.title || ''} • ${formatDate(exportPost.date)}`}
+      storageKey="training"
+      scopes={[{ value: 'present', label: 'Samo prisotni' }, { value: 'all', label: 'Vsi prijavljeni (s statusom)' }]}
+      fields={MEMBER_FIELDS}
+      allowSignature
+      supabase={supabase}
+      showToast={showToast}
+      onClose={() => setExportPost(null)}
+      buildReport={async ({ scope, fieldKeys, signature }) => {
+        const weaponsByEmail = fieldsNeedWeapons(fieldKeys) ? await loadWeaponsByEmail(supabase) : {};
+        return buildTrainingReport({ post: exportPost, members, fieldKeys, scope, signature, ctx: { weaponsByEmail } });
+      }}
+    />
+  );
 
   const formatDate = (dateStr) => {
     if (!dateStr) return '';
@@ -369,11 +409,44 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
   
   const handleSaveAAR = async () => {
     setSavingAAR(true);
-    await onCompleteTraining(post.id, attendance, trainerNotes, post, currentUser.email);
+    const ok = await onCompleteTraining(post.id, attendance, trainerNotes, post, currentUser.email);
     setSavingAAR(false);
-    setShowAAR(false);
-    onClose();
+    if (ok === false) return;
+    // Keep the box open so the coach can export the list right away
+    setAarDone({ ...post, completed: true, attendance, trainerNotes });
   };
+
+  // AAR finished: offer export
+  if (showAAR && aarDone) {
+    const presentCount = aarDone.attendance.filter(a => a.present).length;
+    return (
+      <div style={{
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+        background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', zIndex: 1001, padding: '20px'
+      }}>
+        <div style={{ ...glassStyle, borderRadius: '20px', padding: '28px 22px', maxWidth: '420px', width: '100%', textAlign: 'center' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(16,185,129,0.2)', color: '#10b981', fontSize: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>✓</div>
+          <h2 style={{ color: '#fff', fontSize: '18px', fontWeight: '700', marginBottom: '6px' }}>Trening zaključen</h2>
+          <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: '13px', marginBottom: '22px' }}>{aarDone.title} • {formatDate(aarDone.date)} • prisotni: {presentCount}/{aarDone.attendance.length}</p>
+          <button onClick={() => setExportPost(aarDone)} style={{
+            width: '100%', padding: '14px', marginBottom: '10px',
+            background: 'linear-gradient(135deg, #c1372a 0%, #9a2c22 100%)',
+            color: '#fff', border: 'none', borderRadius: '12px', fontSize: '15px', fontWeight: '600', cursor: 'pointer'
+          }}>
+            Izvozi seznam
+          </button>
+          <button onClick={() => { setAarDone(null); setShowAAR(false); onClose(); }} style={{
+            width: '100%', padding: '12px', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.8)',
+            border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', fontSize: '14px', fontWeight: '600', cursor: 'pointer'
+          }}>
+            Zapri
+          </button>
+        </div>
+        {renderTrainingExport()}
+      </div>
+    );
+  }
 
   // AAR Modal
   if (showAAR) {
@@ -427,7 +500,7 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
                     {person.present ? '✓' : ''}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ color: '#fff', fontSize: '14px', fontWeight: '500' }}>{person.name}</div>
+                    <div style={{ color: '#fff', fontSize: '14px', fontWeight: '500' }}>{person.name}{person.addedByCoach && <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: '400' }}> · dodan</span>}</div>
                     <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}>{person.email}</div>
                   </div>
                   <span style={{ 
@@ -438,6 +511,36 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
                   </span>
                 </div>
               ))}
+
+              {/* Dodaj člana: someone who came without signing up */}
+              <div style={{ marginTop: '12px' }}>
+                <div style={{ position: 'relative' }}>
+                  <UserPlus size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)', pointerEvents: 'none' }} />
+                  <input
+                    type="search"
+                    value={addMemberQuery}
+                    onChange={(e) => setAddMemberQuery(e.target.value)}
+                    placeholder="Dodaj člana (išči po imenu)"
+                    autoComplete="off"
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '12px 12px 12px 36px', background: 'rgba(0,0,0,0.3)', border: '1px dashed rgba(255,255,255,0.2)', borderRadius: '10px', color: '#fff', fontSize: '16px', outline: 'none' }}
+                  />
+                </div>
+                {addMemberQuery.trim() && (
+                  <div style={{ marginTop: '6px', borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                    {addMemberMatches.length === 0 ? (
+                      <div style={{ padding: '10px 12px', color: 'rgba(255,255,255,0.45)', fontSize: '13px' }}>Ni zadetkov</div>
+                    ) : addMemberMatches.map(m => (
+                      <div key={m.id || m.email} onClick={() => addMemberToAttendance(m)} style={{ padding: '10px 12px', cursor: 'pointer', background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                        <div>
+                          <div style={{ color: '#fff', fontSize: '14px' }}>{memberDisplayName(m)}</div>
+                          <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}>{m.email}</div>
+                        </div>
+                        <Plus size={16} color="#10b981" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             
             <div style={{ marginBottom: '20px' }}>
@@ -924,6 +1027,24 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
             </div>
           )}
           
+          {/* Coach: export attendance of a completed training */}
+          {isCoach && post.completed && Array.isArray(post.attendance) && (
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '16px', marginTop: '16px' }}>
+              <div style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>
+                Možnosti trenerja
+              </div>
+              <button onClick={() => setExportPost(post)} style={{
+                width: '100%', padding: '12px',
+                background: 'linear-gradient(135deg, #c1372a 0%, #9a2c22 100%)',
+                color: '#fff', border: 'none', borderRadius: '10px',
+                fontSize: '14px', fontWeight: '600', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+              }}>
+                <Download size={16} /> Izvozi seznam ({post.attendance.filter(a => a.present).length} prisotnih)
+              </button>
+            </div>
+          )}
+
           {/* Coach buttons */}
           {isCoach && canRSVP && !post.cancelled && !post.completed && (
             <div style={{ 
@@ -963,6 +1084,8 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
           )}
         </div>
       </div>
+      {/* Stop clicks inside the export box from closing this modal */}
+      {exportPost && <div onClick={e => e.stopPropagation()}>{renderTrainingExport()}</div>}
     </div>
   );
 };
@@ -1640,6 +1763,7 @@ function App() {
   const [lastMemberDoc, setLastMemberDoc] = useState(null);
   const [memberListSearch, setMemberListSearch] = useState('');
   const [memberListFilter, setMemberListFilter] = useState('all'); // all | paid | unpaid | notLoggedIn
+  const [adminExport, setAdminExport] = useState(null); // null | 'members' | 'period'
   const [loadingAllMembers, setLoadingAllMembers] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
   const [showCSVImport, setShowCSVImport] = useState(false);
@@ -2748,7 +2872,8 @@ function App() {
     maxParticipants: post.max_participants,
     showInNews: post.show_in_news,
     isFeatured: post.is_featured,
-    trainer: post.trener
+    trainer: post.trener,
+    trainerNotes: post.trainer_notes
   });
 
   // Helper function to transform database message to app format
@@ -2890,6 +3015,42 @@ function App() {
       loadAllMembers();
     }
   }, [memberListSearch, memberListFilter, hasMoreMembers]);
+
+  // ---- Export data: always read fresh from the database, not just what's loaded on screen ----
+  const fetchAllMembersForExport = async () => {
+    const CHUNK = 1000;
+    const all = [];
+    for (let from = 0; ; from += CHUNK) {
+      const { data, error } = await supabase.from('members').select('*').order('id', { ascending: true }).range(from, from + CHUNK - 1);
+      if (error) throw error;
+      all.push(...data);
+      if (data.length < CHUNK) break;
+    }
+    return all.map(formatMember);
+  };
+
+  const fetchCompletedTrainingsForExport = async (period) => {
+    let query = supabase.from('posts').select('*').eq('completed', true).in('type', ['training', 'competition']);
+    if (period?.from) query = query.gte('date', period.from);
+    if (period?.to) query = query.lte('date', period.to);
+    const { data, error } = await query.order('date', { ascending: true }).limit(5000);
+    if (error) throw error;
+    return (data || []).map(transformPost);
+  };
+
+  // Same search + chip filter as the Člani screen, for "export what I'm looking at"
+  const applyMemberListFilters = (list) => {
+    const checks = { all: () => true, paid: m => m.membershipPaid, unpaid: m => !m.membershipPaid, notLoggedIn: m => !m.hasLoggedIn };
+    return list.filter(m => (checks[memberListFilter] || checks.all)(m) && memberMatchesSearch(m, memberListSearch));
+  };
+  const memberListFilterLabel = () => {
+    const parts = [];
+    if (memberListSearch.trim()) parts.push(`Iskanje: »${memberListSearch.trim()}«`);
+    const chipLabels = { paid: 'Plačano', unpaid: 'Ni plačano', notLoggedIn: 'Ni se prijavil' };
+    if (chipLabels[memberListFilter]) parts.push(chipLabels[memberListFilter]);
+    return parts.join(' · ') || 'Vsi člani';
+  };
+  const hasActiveMemberFilter = () => memberListSearch.trim() !== '' || memberListFilter !== 'all';
 
   const loadMoreMembers = async () => {
     try {
@@ -3702,9 +3863,22 @@ function App() {
       loadPosts();
       showToast(t.trainingCompleted, 'success');
 
-      // Send report email via edge function (non-blocking)
-      try {
-        await supabase.functions.invoke('send-training-report', {
+      // Send report email via edge function in the background, with the attendance PDF attached
+      (async () => {
+        let attachment = null;
+        try {
+          const report = buildTrainingReport({
+            post: { ...postData, attendance, trainerNotes: notes },
+            members,
+            fieldKeys: ['ime', 'mors'],
+            scope: 'all',
+            signature: false,
+            ctx: {}
+          });
+          const file = await makeExportFile(report, 'pdf');
+          attachment = { filename: file.filename, content: await blobToBase64(file.blob) };
+        } catch (pdfErr) { /* send the email without the PDF */ }
+        supabase.functions.invoke('send-training-report', {
           body: {
             title: postData?.title,
             date: postData?.date,
@@ -3714,11 +3888,16 @@ function App() {
             trainerEmail: trainerEmail,
             trainerName: postData?.trener || trainerEmail,
             attendees: attendance.map(a => ({ email: a.email, name: a.name, present: a.present })),
-            notes: notes
+            notes: notes,
+            attachment
           }
         });
-      } catch (emailErr) { /* email failure doesn't block the UI */ }
-    } catch (e) { showToast((t.error || 'Napaka') + ': ' + e.message, 'error'); }
+      })().catch(() => { /* email failure doesn't block the UI */ });
+      return true;
+    } catch (e) {
+      showToast((t.error || 'Napaka') + ': ' + e.message, 'error');
+      return false;
+    }
   };
 
   const handleCancelTraining = async (eventId) => {
@@ -4330,7 +4509,53 @@ function App() {
       )}
       
       {showCSVImport && <CSVImportModal onClose={() => setShowCSVImport(false)} onImport={handleCSVImport} t={t} />}
-      {selectedEvent && <EventDetailModal post={selectedEvent} onClose={() => setSelectedEvent(null)} currentUser={currentUser} onRSVP={handleRSVP} onCancelRSVP={cancelRSVP} profileData={profileData} userRole={userRole} onCompleteTraining={handleCompleteTraining} onCancelTraining={handleCancelTraining} t={t} language={language} members={members} />}
+      {/* Admin exports (coaches + superadmins only) */}
+      {adminExport === 'members' && (userRole === 'admin' || userRole === 'superadmin') && (
+        <ExportModal
+          title="Izvoz članov"
+          subtitle="Izberi koga in katere podatke"
+          storageKey="members"
+          scopes={[
+            ...(view === 'admin-members' && hasActiveMemberFilter() ? [{ value: 'filtered', label: 'Trenutno iskanje' }] : []),
+            { value: 'all', label: 'Vsi' },
+            { value: 'paid', label: 'Plačani' },
+            { value: 'unpaid', label: 'Neplačani' }
+          ]}
+          fields={[...MEMBER_FIELDS, { key: 'prisotnost', label: 'Prisotnost (obdobje)' }]}
+          showPeriod
+          periodRequiredFor="prisotnost"
+          supabase={supabase}
+          showToast={showToast}
+          onClose={() => setAdminExport(null)}
+          buildReport={async ({ scope, fieldKeys, period }) => {
+            let list = await fetchAllMembersForExport();
+            if (scope === 'filtered') list = applyMemberListFilters(list);
+            const trainings = fieldKeys.includes('prisotnost') ? await fetchCompletedTrainingsForExport(period) : [];
+            const weaponsByEmail = fieldsNeedWeapons(fieldKeys) ? await loadWeaponsByEmail(supabase) : {};
+            return buildMembersReport({ members: list, posts: trainings, fieldKeys, scope, period, ctx: { weaponsByEmail }, filterLabel: memberListFilterLabel() });
+          }}
+        />
+      )}
+      {adminExport === 'period' && (userRole === 'admin' || userRole === 'superadmin') && (
+        <ExportModal
+          title="Poročilo prisotnosti"
+          subtitle="Vsi zaključeni treningi v obdobju"
+          storageKey="period"
+          scopes={[{ value: 'present', label: 'Samo prisotni' }, { value: 'all', label: 'Vsi prijavljeni (s statusom)' }]}
+          fields={MEMBER_FIELDS}
+          showPeriod
+          supabase={supabase}
+          showToast={showToast}
+          onClose={() => setAdminExport(null)}
+          buildReport={async ({ scope, fieldKeys, period }) => {
+            const [list, trainings] = await Promise.all([fetchAllMembersForExport(), fetchCompletedTrainingsForExport(period)]);
+            const weaponsByEmail = fieldsNeedWeapons(fieldKeys) ? await loadWeaponsByEmail(supabase) : {};
+            return buildPeriodReport({ posts: trainings, members: list, fieldKeys, scope, period, ctx: { weaponsByEmail } });
+          }}
+        />
+      )}
+
+      {selectedEvent && <EventDetailModal post={selectedEvent} onClose={() => setSelectedEvent(null)} currentUser={currentUser} onRSVP={handleRSVP} onCancelRSVP={cancelRSVP} profileData={profileData} userRole={userRole} onCompleteTraining={handleCompleteTraining} onCancelTraining={handleCancelTraining} t={t} language={language} members={members} showToast={showToast} />}
 
       {view === 'admin-dashboard' && (userRole === 'admin' || userRole === 'superadmin') && (
         <div className="page-scroll">
@@ -4360,6 +4585,20 @@ function App() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                 <div style={{ width: '46px', height: '46px', borderRadius: '12px', background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px rgba(239, 68, 68, 0.3)' }}><Timer size={22} color="#fff" /></div>
                 <div><h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '2px' }}>{t.trainingMatch}</h3><p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>{t.resultsExport}</p></div>
+              </div>
+              <ChevronRight size={22} color="rgba(255,255,255,0.3)" />
+            </div>
+            <div onClick={() => setAdminExport('members')} style={{ ...glassCardStyle, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div style={{ width: '46px', height: '46px', borderRadius: '12px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px rgba(16, 185, 129, 0.3)' }}><Users size={22} color="#fff" /></div>
+                <div><h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '2px' }}>Izvoz članov</h3><p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>PDF ali Excel, izbrani podatki</p></div>
+              </div>
+              <ChevronRight size={22} color="rgba(255,255,255,0.3)" />
+            </div>
+            <div onClick={() => setAdminExport('period')} style={{ ...glassCardStyle, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div style={{ width: '46px', height: '46px', borderRadius: '12px', background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px rgba(14, 165, 233, 0.3)' }}><Calendar size={22} color="#fff" /></div>
+                <div><h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '2px' }}>Poročilo prisotnosti</h3><p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>Vsi treningi v izbranem obdobju</p></div>
               </div>
               <ChevronRight size={22} color="rgba(255,255,255,0.3)" />
             </div>
@@ -4710,7 +4949,12 @@ function App() {
           <>
           <div style={{ position: 'sticky', top: 0, zIndex: 5, background: '#0a0b0c', margin: 'calc(-16px - env(safe-area-inset-top, 0px)) -16px 6px', padding: 'calc(16px + env(safe-area-inset-top, 0px)) 16px 10px' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <h1 style={{ fontSize: '22px', fontWeight: '700', color: '#fff', margin: 0 }}>Člani</h1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h1 style={{ fontSize: '22px', fontWeight: '700', color: '#fff', margin: 0 }}>Člani</h1>
+                <button onClick={() => setAdminExport('members')} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
+                  <Download size={14} /> Izvozi
+                </button>
+              </div>
               <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '13px' }}>
                 {loadingAllMembers ? 'Nalagam vse člane…' : isFiltering ? `${filteredMembers.length} / ${members.length}` : members.length}
               </span>
