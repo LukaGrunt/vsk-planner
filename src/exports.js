@@ -72,6 +72,11 @@ export const loadWeaponsByEmail = async (supabase) => {
 
 const pickFields = (keys) => MEMBER_FIELDS.filter(f => keys.includes(f.key));
 
+const leaderName = (tr) => tr.trener || (tr.attendance || []).find(a => a.role === 'vodja')?.name || '';
+const statusLabel = (p) => (p.role === 'vodja' ? (p.present ? 'Vodja' : 'Vodja (odsoten)') : p.present ? 'Prisoten' : 'Odsoten');
+// Leader first, then alphabetical
+const byLeaderThenName = (a, b) => (b.role === 'vodja') - (a.role === 'vodja') || String(a.name || '').localeCompare(String(b.name || ''), 'sl');
+
 const findMember = (members, person) => {
   const email = lower(person?.email);
   return (members || []).find(m => (email && lower(m.email) === email) || (person?.userId && m.user_id === person.userId)) || null;
@@ -140,7 +145,7 @@ export const buildTrainingReport = ({ post, members, fieldKeys, scope, signature
   const fields = pickFields(fieldKeys);
   let people = [...(post.attendance || [])];
   if (scope === 'present') people = people.filter(p => p.present);
-  people.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'sl'));
+  people.sort(byLeaderThenName);
 
   const columns = [{ label: '#', width: 4 }, ...fields.map(f => ({ label: f.label, width: f.width }))];
   if (scope === 'all') columns.push({ label: 'Status', width: 10 });
@@ -149,7 +154,8 @@ export const buildTrainingReport = ({ post, members, fieldKeys, scope, signature
   const rows = people.map((p, i) => {
     const m = findMember(members, p) || { ime: p.name || '', priimek: '', email: p.email };
     const row = [String(i + 1), ...fields.map(f => (f.key === 'ime' ? (fullName(m) || p.name || p.email || '') : f.get(m, ctx)))];
-    if (scope === 'all') row.push(p.present ? 'Prisoten' : 'Odsoten');
+    if (scope === 'all') row.push(statusLabel(p));
+    else if (p.role === 'vodja' && fields[0]?.key === 'ime') row[1] = `${row[1]} (vodja)`;
     if (signature) row.push('');
     return row;
   });
@@ -157,7 +163,7 @@ export const buildTrainingReport = ({ post, members, fieldKeys, scope, signature
   const presentCount = (post.attendance || []).filter(p => p.present).length;
   const meta = [
     [formatSiDate(post.date), post.time, post.location].filter(Boolean).join(' · '),
-    post.trener ? `Trener: ${post.trener}` : null,
+    leaderName(post) ? `Trener: ${leaderName(post)}` : null,
     `Prisotni: ${presentCount}/${(post.attendance || []).length}`,
     post.trainerNotes ? `Opombe: ${post.trainerNotes}` : null
   ].filter(Boolean);
@@ -181,11 +187,11 @@ export const buildPeriodReport = ({ posts, members, fieldKeys, scope, period, ct
   trainings.forEach(tr => {
     [...tr.attendance]
       .filter(p => scope === 'all' || p.present)
-      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'sl'))
+      .sort(byLeaderThenName)
       .forEach(p => {
         const m = findMember(members, p) || { ime: p.name || '', priimek: '', email: p.email };
-        const row = [formatSiDate(tr.date), tr.title || '', tr.trener || '', ...fields.map(f => (f.key === 'ime' ? (fullName(m) || p.name || p.email || '') : f.get(m, ctx)))];
-        if (scope === 'all') row.push(p.present ? 'Prisoten' : 'Odsoten');
+        const row = [formatSiDate(tr.date), tr.title || '', leaderName(tr), ...fields.map(f => (f.key === 'ime' ? (fullName(m) || p.name || p.email || '') : f.get(m, ctx)))];
+        if (scope === 'all') row.push(statusLabel(p));
         rows.push(row);
       });
   });

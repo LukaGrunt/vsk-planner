@@ -357,9 +357,29 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
   // AAR state
   const [showAAR, setShowAAR] = useState(false);
   const [showParticipants, setShowParticipants] = useState(false);
-  const [attendance, setAttendance] = useState(() => 
-    currentRSVPs.map(r => ({ ...r, present: true }))
-  );
+  // The coach always counts as an attendee (VODJA), even if nobody else signed up.
+  // Leader = the training's assigned trainer if they're a member, otherwise whoever finishes it.
+  const getTrainingLeader = () => {
+    const nameOf = (m) => `${m.ime || ''} ${m.priimek || ''}`.trim();
+    const assignedName = String(post.trener || post.trainer || '').trim();
+    if (assignedName) {
+      const assigned = (members || []).find(m => nameOf(m).toLowerCase() === assignedName.toLowerCase());
+      if (assigned) return { userId: assigned.user_id || null, email: assigned.email || '', name: nameOf(assigned) || assigned.email };
+      return { userId: null, email: '', name: assignedName };
+    }
+    const me = (members || []).find(m => String(m.email || '').toLowerCase() === String(currentUser?.email || '').toLowerCase());
+    const profileName = `${profileData?.ime || ''} ${profileData?.priimek || ''}`.trim();
+    return { userId: currentUser?.id || null, email: currentUser?.email || '', name: (me && nameOf(me)) || profileName || currentUser?.email || 'Trener' };
+  };
+  const [attendance, setAttendance] = useState(() => {
+    const leader = getTrainingLeader();
+    const sameAsLeader = (r) => (leader.email && String(r.email || '').toLowerCase() === leader.email.toLowerCase())
+      || (!leader.email && String(r.name || '').toLowerCase() === leader.name.toLowerCase());
+    return [
+      { ...leader, present: true, role: 'vodja' },
+      ...currentRSVPs.filter(r => !sameAsLeader(r)).map(r => ({ ...r, present: true }))
+    ];
+  });
   const [trainerNotes, setTrainerNotes] = useState('');
   const [savingAAR, setSavingAAR] = useState(false);
   // "Dodaj člana": coach adds someone who came without signing up
@@ -477,13 +497,9 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
           <div style={{ padding: '20px' }}>
             <div style={{ marginBottom: '20px' }}>
               <h3 style={{ color: '#fff', fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>Kdo je bil prisoten?</h3>
-              {attendance.length === 0 ? (
-                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>Nihče se ni prijavil</p>
-              ) : attendance.map((person, i) => (
-                <div key={i} onClick={() => {
-                  const updated = [...attendance];
-                  updated[i].present = !updated[i].present;
-                  setAttendance(updated);
+              {attendance.map((person, i) => (
+                <div key={`${person.email || person.name}-${i}`} onClick={() => {
+                  setAttendance(prev => prev.map((p, j) => (j === i ? { ...p, present: !p.present } : p)));
                 }} style={{
                   display: 'flex', alignItems: 'center', gap: '12px',
                   padding: '12px', marginBottom: '8px', borderRadius: '10px',
@@ -503,12 +519,16 @@ const EventDetailModal = ({ post, onClose, currentUser, onRSVP, onCancelRSVP, pr
                     <div style={{ color: '#fff', fontSize: '14px', fontWeight: '500' }}>{person.name}{person.addedByCoach && <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: '400' }}> · dodan</span>}</div>
                     <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}>{person.email}</div>
                   </div>
-                  <span style={{ 
-                    fontSize: '11px', fontWeight: '600',
-                    color: person.present ? '#10b981' : '#ef4444'
-                  }}>
-                    {person.present ? 'Prisoten' : 'Odsoten'}
-                  </span>
+                  {person.role === 'vodja' && person.present ? (
+                    <span style={{ fontSize: '10px', fontWeight: '700', padding: '3px 8px', borderRadius: '20px', background: '#c1372a', color: '#fff', letterSpacing: '0.04em' }}>VODJA</span>
+                  ) : (
+                    <span style={{ 
+                      fontSize: '11px', fontWeight: '600',
+                      color: person.present ? '#10b981' : '#ef4444'
+                    }}>
+                      {person.present ? 'Prisoten' : 'Odsoten'}
+                    </span>
+                  )}
                 </div>
               ))}
 
@@ -3887,7 +3907,7 @@ function App() {
             type: postData?.type,
             trainerEmail: trainerEmail,
             trainerName: postData?.trener || trainerEmail,
-            attendees: attendance.map(a => ({ email: a.email, name: a.name, present: a.present })),
+            attendees: attendance.filter(a => a.role !== 'vodja').map(a => ({ email: a.email, name: a.name, present: a.present })),
             notes: notes,
             attachment
           }
