@@ -9,12 +9,16 @@
 - **Service worker updated**: Can now receive and display push notifications
 - **.env.example created**: Template for environment variables
 
-### Generated VAPID Keys
-```
-Public Key: BA_2wu_tNgy03s6ckOKI4MrwnePuEnYC20foGMPb0auqTu7Gd18-xbtDwHVGZ3wVjbDBP0lOgfzMv2lV1ouZ_Pg
+### VAPID Keys
+The keys that used to be written here were removed because this repository is public.
+**Do not reuse them.** Before finishing push notifications, generate a new pair:
 
-Private Key: uCqW-NEUVrwSKQsPw04Ka6nNnE53aeoUvlN0zMvpaSo
 ```
+npx web-push generate-vapid-keys
+```
+
+Put the public key in the app's environment variables and the private key only in
+Supabase Edge Function secrets. Never commit the private key.
 
 ⚠️ **IMPORTANT**: Keep the private key secret! Only use it server-side.
 
@@ -43,7 +47,7 @@ VITE_SUPABASE_URL=your_supabase_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 # Add these new VAPID keys
-VITE_VAPID_PUBLIC_KEY=BA_2wu_tNgy03s6ckOKI4MrwnePuEnYC20foGMPb0auqTu7Gd18-xbtDwHVGZ3wVjbDBP0lOgfzMv2lV1ouZ_Pg
+VITE_VAPID_PUBLIC_KEY=<new_public_key>
 ```
 
 **For Vercel deployment**, add the same environment variable in your Vercel project settings.
